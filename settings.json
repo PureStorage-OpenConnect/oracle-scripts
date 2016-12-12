@@ -2,6 +2,6 @@
     "id": "oracle-scripts",
     "filter": "database",
     "image": "http://code.purestorage.com/images/image4.png",
-    "featured": 2,
+    "featured": 0,
     "priority": 3
 }
