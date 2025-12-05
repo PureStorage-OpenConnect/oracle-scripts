@@ -1,3 +1,5 @@
+https://raw.githubusercontent.com/PureStorage-OpenConnect/sqlserver-scripts/master/graphics/purestorage.png
+
 # OracleScripts
 
 Scripts to clone Oracle database on Pure Storage FlashArray using FlashRecover Snapshots
