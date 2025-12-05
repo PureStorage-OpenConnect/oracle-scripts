@@ -1,6 +1,4 @@
 
-![Pure Storage logo.](https://raw.githubusercontent.com/PureStorage-OpenConnect/sqlserver-scripts/master/graphics/purestorage.png)
-
 ![](https://raw.githubusercontent.com/PureStorage-OpenConnect/sqlserver-scripts/master/graphics/purestorage.png)
 
 # Pure Storage OpenConnect Oracle Scripts
