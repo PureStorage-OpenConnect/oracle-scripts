@@ -1,6 +1,8 @@
 
 ![Pure Storage logo.](https://raw.githubusercontent.com/PureStorage-OpenConnect/sqlserver-scripts/master/graphics/purestorage.png)
 
+![](https://raw.githubusercontent.com/PureStorage-OpenConnect/sqlserver-scripts/master/graphics/purestorage.png)
+
 # Pure Storage OpenConnect Oracle Scripts
 
 # About this Repository
@@ -8,6 +10,9 @@ Welcome to the Oracle Pure Storage script repository. In this repository, you ca
 
 # Business Application of Snapshots & Replication
 Array-based snapshots are used to decouple database operations from the size of the data. Using array-based snapshots, you can accelerate access to data in several common database scenarios:
+
+* Instant data + ransomware protection
+* Dev/Test refreshes in seconds
 
 <ul>
 <li>Instant data + ransomware protection</li>
