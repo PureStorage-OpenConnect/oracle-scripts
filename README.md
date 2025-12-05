@@ -1,5 +1,5 @@
 
-![](https://raw.githubusercontent.com/PureStorage-OpenConnect/sqlserver-scripts/master/graphics/purestorage.png)
+![](graphics/purelogo.png)
 
 # Pure Storage OpenConnect Oracle Scripts
 
