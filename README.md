@@ -1,5 +1,5 @@
 
-![](graphics/purelogo.png)
+![](graphics/purestorage.png)
 
 # Pure Storage OpenConnect Oracle Scripts
 
