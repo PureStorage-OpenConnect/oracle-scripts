@@ -17,6 +17,7 @@ Array-based snapshots are used to decouple database operations from the size of 
 <li>Offload database maintenance</li>
 <li>Offload RMAN backups</li>
 <li>Re-see a Dataguard Standby</li>
+<li>Read tags of an Oracle storage snapshot</li>
 </ul>
 
 clonedb.sh - Script to clone single instance Oracle database mounted on filesystems
