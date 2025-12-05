@@ -9,13 +9,13 @@ Welcome to the Oracle Pure Storage script repository. In this repository, you ca
 # Business Application of Snapshots & Replication
 Array-based snapshots are used to decouple database operations from the size of the data. Using array-based snapshots, you can accelerate access to data in several common database scenarios:
 
-Instant data + ransomware protection
-Dev/Test refreshes in seconds
-In-place application and database upgrades
-Intra-Instance ETL
-Offload database maintenance
-Offload RMAN backups
-Re-see a Dataguard Standby
+- Instant data + ransomware protection
+- Dev/Test refreshes in seconds
+- In-place application and database upgrades
+- Intra-Instance ETL
+- Offload database maintenance
+- Offload RMAN backups
+- Re-see a Dataguard Standby
 
 clonedb.sh - Script to clone single instance Oracle database mounted on filesystems
 
