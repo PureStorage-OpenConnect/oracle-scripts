@@ -12,16 +12,14 @@ Array-based snapshots are used to decouple database operations from the size of 
 * Instant data + ransomware protection
 * Dev/Test refreshes in seconds
 
-<ul>
-<li>Instant data + ransomware protection</li>
-<li>Dev/Test refreshes in seconds</li>
-<li>In-place application and database upgrades</li>
-<li>Intra-Instance ETL</li>
-<li>Offload database maintenance</li>
-<li>Offload RMAN backups</li>
-<li>Re-see a Dataguard Standby</li>
-<li>Read tags of an Oracle storage snapshot</li>
-</ul>
+* Instant data + ransomware protection
+* Dev/Test refreshes in seconds
+* In-place application and database upgrades
+* Intra-Instance ETL
+* Offload database maintenance
+* Offload RMAN backups
+* Re-see a Dataguard Standby
+* Read tags of an Oracle storage snapshot
 
 # Technical Requirements
 All scripts in this repository are designed for Linux.  Most will probably run on UNIX with minor modification.<br/>
