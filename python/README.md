@@ -36,7 +36,7 @@ The -i flag may be used to ignore these tags and re-establish a new source-snaps
 # A Worked Example
 
 In the example below, the source protection group gct-oradb-demo-prd01-pg is snapshot and then sync'd to the target protection group gct-oradb-demo-dev01-pg.\
-The JSON file excludes two volumes from the snapshot/sync process.\
+The JSON file excludes two volumes from the snapshot/sync process.
 
 <code>
 [oracle@gct-oradb-demo-dev01 py]$  python fa_pg_snap.py -f fa27b.json -n dec051707 -s gct-oradb-demo-prd01-pg -t gct-oradb-demo-dev01-pg -x
