@@ -1,6 +1,6 @@
 # Python scripts for snapshot and cloning an Oracle database on Pure Flash Array
 
-The script fa_pg_ora_snap.py provides for taking a snapshot clone of an Oracle database using ASM with volumes on a protection group on a Pure Flash Array.\
+The script fa_pg_ora_snap.py provides for taking a snapshot clone of an Oracle database using ASM, with volumes in a protection group on a Pure Flash Array.\
 The code can also clone the source database to a target database server.  The code will check to determine of the target database and ASM diskgroups are offline before execution.  If they are still online, the code will refuse to execute.\
 It will also optionally copy that snapshot to a target protection group.  In this case the target protection group must have an equal or greater number of volumes of equal or larger size than the source.\
 The script can also copy an existing snapshot of a source protection group to a target protection group.\
