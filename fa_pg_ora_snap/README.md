@@ -11,7 +11,7 @@ If replication is set up for the source protection group, the snapshot can be re
 This Python code imports the fa_pg_snap.py code.
 
 # Arguments:
-```
+
 -s source protection group (required)\
 -t target protection group (optional)\
 -n the snapshot name.  If this does not exist - it will create it.  If it already exists, it will use the existing snapshot to sync to the target. (required)\
@@ -22,7 +22,6 @@ This Python code imports the fa_pg_snap.py code.
 -i ignore tag (optional - see below)\
 -x execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you would it would do.  This may prove useful to make sure you have all the settings right before you  overwrite a target protection group.\
 Note - many database parameters must be specified in the JSON file - see below:
-```
 
 # Notes:
 
@@ -44,7 +43,7 @@ In the example below, the database SWINGPRD running on a different Linux server 
 The code will snapshot that protection group, and then overwrite volumes on the local Linux server, where Oracle is also installed.  The code will then start the cloned ASM diskgroups, mount the cloned database and open it read-write.
 
 
-<code>
+```
 [oracle@gct-oradb-demo-dev01 py]$ python fa_pg_ora_snap.py -f ora_prd01_2_dev01.json -n dec051735 -o open -x
 ============
 fa_pg_ora_snap.py 1.9.0 started at 2025-12-05 17:36:23.751697
@@ -161,4 +160,4 @@ alter system set db_unique_name=swingdev sid='*' scope=spfile;
 actual state of swingdev is:OPEN
 ============
 complete
-</code>
+```
