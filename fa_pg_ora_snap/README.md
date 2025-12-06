@@ -11,7 +11,7 @@ If replication is set up for the source protection group, the snapshot can be re
 This Python code imports the fa_pg_snap.py code.
 
 # Arguments:
-
+```
 -s source protection group (required)\
 -t target protection group (optional)\
 -n the snapshot name.  If this does not exist - it will create it.  If it already exists, it will use the existing snapshot to sync to the target. (required)\
@@ -22,6 +22,7 @@ This Python code imports the fa_pg_snap.py code.
 -i ignore tag (optional - see below)\
 -x execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you would it would do.  This may prove useful to make sure you have all the settings right before you  overwrite a target protection group.\
 Note - many database parameters must be specified in the JSON file - see below:
+```
 
 # Notes:
 
