@@ -29,7 +29,8 @@ In some scenarios you may with to exclude volumes from the snapshot-copy.  For e
 # Source snapshot/target volume pairing
 
 If a target protection group is specified, the code will overwrite the volumes of the target protection group with the contents of the source snapshot.\
-To achieve this, the code will look for matching volumes of the same size.  If none can be found, then the code will consider volumes of larger size.  Volumes are considered in alphabetical order, so if the same naming convention is used for both source and target, the volumes will be considered in order.  Once a suitable target has been identified, the code tags the volume of the target protection group with the volume id of the source volume.  This means that every subsequent execution of the code wil see the same target volume ovewritten from the same source snapshot volume.
+To achieve this, the code will look for matching volumes of the same size.  If none can be found, then the code will consider volumes of larger size.\
+Volumes are considered in alphabetical order, so if the same naming convention is used for both source and target, the volumes will be considered in order.  Once a suitable target has been identified, the code tags the volume of the target protection group with the volume id of the source volume.  This means that every subsequent execution of the code wil see the same target volume ovewritten from the same source snapshot volume.\
 The -i flag may be used to ignore these tags and re-establish a new source-snapshot/target volume pairing, such as the user decides to snapshot from a different source protection group.
 
 # A Worked Example
