@@ -23,6 +23,21 @@ This Python code imports the fa_pg_snap.py code.
 -x execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you would it would do.  This may prove useful to make sure you have all the settings right before you  overwrite a target protection group.\
 Note - many database parameters must be specified in the JSON file - see below:
 
+# JSON file settings:
+
+* rescan_scsi_bus - how to scan for new ASM disks
+* asm_sid - ASM SID on the target machine
+* asm_home - ASM home on the target machine
+* oracle_sid - Oracle SID of the cloned database (must exist on the target server)
+* oracle_home - Oracle home on the target machine
+* oracle_target_mode - requested state of cloned database (OPEN, DOWN, STARTED or MOUNTED) - overriden by the command line option
+* local_listener - the listener the target database is to register with
+* db_unique_name - the db_unique_name setting of the cloned database 
+* ora_src_usr - source database user 
+* ora_src_pwd - source database password 
+* ora_src_cs - source database connection string
+* ora_backup_mode - whether to use Oracle backup mode - overriden by command line option
+    
 # Notes:
 
 When fully cloning a database from source to target, the code must execute on the target database server as a privileged user able to mount ASM diskgroups and start the target database.  This code assumes that the ASM Grid Infrastructure is owned by the same oracle user as the database.\
