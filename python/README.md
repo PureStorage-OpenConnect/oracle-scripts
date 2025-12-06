@@ -26,11 +26,16 @@ If the JSON file does not specify authentication credentials, the code will try 
 
 In some scenarios you may with to exclude volumes from the snapshot-copy.  For example, VVOLs include a config VVOL that must NOT be overwritten.  In this example, the JSON file allows the user to specify source volumes in the protection group that will NOT be sync'd to target volumes in the target protection group.
 
+# Source snapshot/target volume pairing
+
+If a target protection group is specified, the code will overwrite the volumes of the target protection group with the contents of the source snapshot.\
+To achieve this, the code will look for matching volumes of the same size.  If none can be found, then the code will consider volumes of larger size.  Volumes are considered in alphabetical order, so if the same naming convention is used for both source and target, the volumes will be considered in order.  Once a suitable target has been identified, the code tags the volume of the target protection group with the volume id of the source volume.  This means that every subsequent execution of the code wil see the same target volume ovewritten from the same source snapshot volume.
+The -i flag may be used to ignore these tags and re-establish a new source-snapshot/target volume pairing, such as the user decides to snapshot from a different source protection group.\
+
 # A Worked Example
 
 In the example below, the source protection group gct-oradb-demo-prd01-pg is snapshot and then sync'd to the target protection group gct-oradb-demo-dev01-pg.\
-The JSON file excludes two volumes from the snapshot/sync process.
-Once the snapshot is created, the code inspects the target protection group and enumerates the volumes.  The code uses tagging to tag each volume in the target protection group with the source volume it is overwritten with.  This means that subsequent executions of the code will always sync the same source volume snapshot to the same target volume.  The -i flag may be used to ignore these tags and re-establish a new source-snapshot/target volume pairing.
+The JSON file excludes two volumes from the snapshot/sync process.\
 
 <code>
 [oracle@gct-oradb-demo-dev01 py]$  python fa_pg_snap.py -f fa27b.json -n dec051707 -s gct-oradb-demo-prd01-pg -t gct-oradb-demo-dev01-pg -x
