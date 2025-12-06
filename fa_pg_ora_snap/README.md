@@ -151,8 +151,8 @@ The Oracle base has been set to /u01/app/oracle
 --------------------------------------------------------------------------------
 Label                     Filtering   Path
 ================================================================================
-ADRDATA00                  DISABLED   /dev/sde
-ADRDATA01                  DISABLED   /dev/sdf
+DATA00                     DISABLED   /dev/sde
+DATA01                     DISABLED   /dev/sdf
 FRA00                      DISABLED   /dev/sdb
 FRA01                      DISABLED   /dev/sdd
 GRID1                      DISABLED   /dev/sdc
