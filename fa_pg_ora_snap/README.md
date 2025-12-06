@@ -31,16 +31,17 @@ If replication is not specified, both the source and target protection groups ar
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST and API_TOKEN for authentication to the source Flash Array.\
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST_TGT and API_TOKEN_TGT for authentication to the target Flash Array.
 
-# Source snapshot/target volume pairing
+# Tagging the database snapshot
 
-If a target protection group is specified, the code will overwrite the volumes of the target protection group with the contents of the source snapshot.\
-To achieve this, the code will look for matching volumes of the same size.  If none can be found, then the code will consider volumes of larger size.  Volumes are considered in alphabetical order, so if the same naming convention is used for both source and target, the volumes will be considered in order.  Once a suitable target has been identified, the code tags the volume of the target protection group with the volume id of the source volume.  This means that every subsequent execution of the code wil see the same target volume ovewritten from the same source snapshot volume.
-The -i flag may be used to ignore these tags and re-establish a new source-snapshot/target volume pairing, such as the user decides to snapshot from a different source protection group.
+The python code adds numerous tags to the database snapshot.  This allows the DBA to recover the database from the snapshot at a later time when, perhaps, the source database is no longer available to inspect.\
+The tags include the database time the snapshot was made, which allows the use of the "recover database snapshot time" syntax.\
+Tags also include the database ID, database name, if the database was in backup mode or not, and the location of the database controlfiles.
 
 # A Worked Example
 
-In the example below, the source protection group gct-oradb-demo-prd01-pg is snapshot and then sync'd to the target protection group gct-oradb-demo-dev01-pg.\
-The JSON file excludes two volumes from the snapshot/sync process.
+In the example below, the database SWINGPRD running on a different Linux server has its ASM diskgroups in a Pure Flash Array protection group called gct-oradb-demo-prd01-pg\
+The code will snapshot that protection group, and then overwrite volumes on the local Linux server, where Oracle is also installed.  The code will then start the cloned ASM diskgroups, mount the cloned database and open it read-write.
+
 
 <code>
 [oracle@gct-oradb-demo-dev01 py]$ python fa_pg_ora_snap.py -f ora_prd01_2_dev01.json -n dec051735 -o open -x
