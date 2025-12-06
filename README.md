@@ -15,7 +15,7 @@ Array-based snapshots are used to decouple database operations from the size of 
 * Intra-Instance ETL
 * Offload database maintenance
 * Offload RMAN backups
-* Re-see a Dataguard Standby
+* Re-seed a Dataguard Standby
 * Read tags of an Oracle storage snapshot
 
 # Technical Requirements
