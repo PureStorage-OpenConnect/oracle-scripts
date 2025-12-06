@@ -14,7 +14,7 @@ If replication is set up for the source protection group, the snapshot can be re
 -r replicate the snapshot to the targets specified in the source protection group (optional)\
 -o output file with the names of the snapshot volumes (optional)\
 -i ignore tag (optional - see below)\
--x execute Lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you would it would do.  This may prove useful to make sure you have all the settings right before you  overwrite a target protection group.\
+-x execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you would it would do.  This may prove useful to make sure you have all the settings right before you  overwrite a target protection group.\
 
 # Notes:
 
