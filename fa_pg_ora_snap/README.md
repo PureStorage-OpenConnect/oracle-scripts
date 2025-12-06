@@ -31,11 +31,6 @@ If replication is not specified, both the source and target protection groups ar
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST and API_TOKEN for authentication to the source Flash Array.\
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST_TGT and API_TOKEN_TGT for authentication to the target Flash Array.
 
-# Excluding Volumes in the Protection Group
-
-In some scenarios you may with to exclude volumes from the snapshot-copy.  For example, VVOLs include a config VVOL that must NOT be overwritten.\
-In this example, the JSON file allows the user to specify source volumes in the protection group that will NOT be sync'd to target volumes in the target protection group.
-
 # Source snapshot/target volume pairing
 
 If a target protection group is specified, the code will overwrite the volumes of the target protection group with the contents of the source snapshot.\
@@ -46,3 +41,122 @@ The -i flag may be used to ignore these tags and re-establish a new source-snaps
 
 In the example below, the source protection group gct-oradb-demo-prd01-pg is snapshot and then sync'd to the target protection group gct-oradb-demo-dev01-pg.\
 The JSON file excludes two volumes from the snapshot/sync process.
+
+<code>
+[oracle@gct-oradb-demo-dev01 py]$ python fa_pg_ora_snap.py -f ora_prd01_2_dev01.json -n dec051735 -o open -x
+============
+fa_pg_ora_snap.py 1.9.0 started at 2025-12-05 17:36:23.751697
+============
+connecting to Flash Array:sn1-x90r2-f06-27.puretec.purestorage.com
+connected
+============
+determining if snapshot dec051735 exists for source pg:gct-oradb-demo-prd01-pg
+snapshot dec051735 exists
+source protection group:gct-oradb-demo-prd01-pg
+target protection group:gct-oradb-demo-dev01-pg
+============
+setting local oracle sid and home
+============
+querying the volumes for protection group:gct-oradb-demo-prd01-pg
+gct-oradb-demo-prd01-data-00
+gct-oradb-demo-prd01-data-01
+gct-oradb-demo-prd01-fra-00
+gct-oradb-demo-prd01-fra-01
+============
+reading tag from snapshot db_name:SWINGDB
+reading tag from snapshot db_id:4017528888
+reading tag from snapshot db_time:2025/12/05 17:35:22
+reading tag from snapshot db_unique_name:SJC
+reading tag from snapshot db_role:PRIMARY
+reading tag from snapshot archivelog_mode:ARCHIVELOG
+reading tag from snapshot flashback_mode:NO
+reading tag from snapshot platform_name:Linux x86 64-bit
+reading tag from snapshot encrypted_tablespaces:0
+reading tag from snapshot version:Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production,Version 19.22.0.0.0
+reading tag from snapshot backup_mode:No
+reading tag from snapshot control_files:+DATA/SWINGDB/CONTROLFILE/current.266.1201708985, +FRA/SJC/CONTROLFILE/current.256.1218830433
+reading tag from snapshot db_recovery_file_dest:+FRA
+reading tag from snapshot db_recovery_file_dest_size:34359738368
+reading tag from snapshot enable_pluggable_database:FALSE
+reading tag from snapshot asm_disk_group:DATA,FRA
+============
+excluded volumes
+============
+listing the volumes for snapshot:dec051735
+name:gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-00 size:120.0 GB
+name:gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-01 size:120.0 GB
+name:gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-00 size:40.0 GB
+name:gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-01 size:40.0 GB
+============
+determining if target instance swingdev is running
+target instance is not running
+============
+determining if target ASM diskgroups are mounted
+ASM diskgroup DATA is not mounted on target
+ASM diskgroup FRA is not mounted on target
+============
+querying the volumes for protection group:gct-oradb-demo-dev01-pg
+gct-oradb-demo-dev01-data-00
+gct-oradb-demo-dev01-data-01
+gct-oradb-demo-dev01-fra-00
+gct-oradb-demo-dev01-fra-01
+============
+querying target volume details
+name:gct-oradb-demo-dev01-data-00 id:a67641ac-9a36-c375-baf1-298c8a98ffe5 size:120.0
+   is a target for gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-00 size:120.0 GB
+name:gct-oradb-demo-dev01-data-01 id:ee320b80-0bec-5a70-5032-87565859e10f size:120.0
+   is a target for gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-01 size:120.0 GB
+name:gct-oradb-demo-dev01-fra-00 id:173bdf4e-5d71-c89d-8e00-9746337999da size:40.0
+   is a target for gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-00 size:40.0 GB
+name:gct-oradb-demo-dev01-fra-01 id:d2680577-4c5f-f094-0a92-98f01e85c7a8 size:40.0
+   is a target for gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-01 size:40.0 GB
+============
+determining volume mapping
+nm:gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-00 src id:a5abc4c3-f199-c026-7c97-a2468e4b5fda map:0 sz:120.0
+  checking for tag matched volume
+    volume gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-00 will be synced to gct-oradb-demo-dev01-data-00
+nm:gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-01 src id:6c2937de-c30e-dde0-9613-fb15a06966b3 map:0 sz:120.0
+  checking for tag matched volume
+    volume gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-01 will be synced to gct-oradb-demo-dev01-data-01
+nm:gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-00 src id:cbda1d30-1313-4b3e-df61-f1fa35957ac3 map:0 sz:40.0
+  checking for tag matched volume
+    volume gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-00 will be synced to gct-oradb-demo-dev01-fra-00
+nm:gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-01 src id:feabf082-e2ce-aaa5-b1ea-8adfd586a7c4 map:0 sz:40.0
+  checking for tag matched volume
+    volume gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-01 will be synced to gct-oradb-demo-dev01-fra-01
+============
+mapping the volumes
+gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-00 will be syncd to gct-oradb-demo-dev01-data-00
+gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-data-01 will be syncd to gct-oradb-demo-dev01-data-01
+gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-00 will be syncd to gct-oradb-demo-dev01-fra-00
+gct-oradb-demo-prd01-pg.dec051735.gct-oradb-demo-prd01-fra-01 will be syncd to gct-oradb-demo-dev01-fra-01
+============
+The Oracle base has been set to /u01/app/oracle
+--------------------------------------------------------------------------------
+Label                     Filtering   Path
+================================================================================
+ADRDATA00                  DISABLED   /dev/sde
+ADRDATA01                  DISABLED   /dev/sdf
+FRA00                      DISABLED   /dev/sdb
+FRA01                      DISABLED   /dev/sdd
+GRID1                      DISABLED   /dev/sdc
+============
+mounting ASM diskgroups on target
+mounting diskgroup DATA
+mounting diskgroup FRA
+ASM diskgroup DATA is mounted on the target
+ASM diskgroup FRA is mounted on the target
+all ASM diskgroups mounted on the target
+============
+requested state of swingdev is:OPEN
+resetting the target SPFILE
+alter system set db_name='SWINGDB' sid='*' scope=spfile;
+alter system set control_files='+DATA/SWINGDB/CONTROLFILE/current.266.1201708985','+FRA/SJC/CONTROLFILE/current.256.1218830433' sid='*' scope=spfile;
+alter system set db_recovery_file_dest='+FRA' sid='*' scope=spfile;
+alter system set db_recovery_file_dest_size=34359738368 sid='*' scope=spfile;
+alter system set enable_pluggable_database=FALSE sid='*' scope=spfile;
+alter system set db_unique_name=swingdev sid='*' scope=spfile;
+actual state of swingdev is:OPEN
+============
+complete
+</code>
