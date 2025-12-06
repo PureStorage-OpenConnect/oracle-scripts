@@ -27,21 +27,22 @@ If the JSON file does not specify authentication credentials, the code will try 
 In some scenarios you may with to exclude volumes from the snapshot-copy.  For example, VVOLs include a config VVOL that must NOT be overwritten.  In this example, the JSON file allows the user to specify source volumes in the protection group that will NOT be sync'd to target volumes in the target protection group.
 
 # A Worked Example
+
+In the example below, the source protection group gct-oradb-demo-prd01-pg is snapshot and then sync'd to the target protection group gct-oradb-demo-dev01-pg.\
+The JSON file excludes two volumes from the snapshot/sync process.
+Once the snapshot is created, the code inspects the target protection group and enumerates the volumes.  The code uses tagging to tag each volume in the target protection group with the source volume it is overwritten with.  This means that subsequent executions of the code will always sync the same source volume snapshot to the same target volume.  The -i flag may be used to ignore these tags and re-establish a new source-snapshot/target volume pairing.
+
 <code>
-[oracle@gct-oradb-demo-dev01 py]$  python fa_pg_snap.py -f fa27b.json -n dec051652 -r -s gct-oradb-demo-prd01-pg -x
+[oracle@gct-oradb-demo-dev01 py]$  python fa_pg_snap.py -f fa27b.json -n dec051707 -s gct-oradb-demo-prd01-pg -t gct-oradb-demo-dev01-pg -x
 ============
-fa_pg_snap.py 1.0.0 started at 2025-12-05 16:54:31.063118
+fa_pg_snap.py 1.0.0 started at 2025-12-05 17:07:36.791237
 ============
 connecting to Flash Array:sn1-x90r2-f06-27.puretec.purestorage.com
 connected
 ============
-connecting to Flash Array:sn1-x90r2-f06-33.puretec.purestorage.com
-connected
-============
-determining if snapshot dec051652 exists for source pg:gct-oradb-demo-prd01-pg
-snapshot dec051652 exists
+determining if snapshot dec051707 exists for source pg:gct-oradb-demo-prd01-pg
 source protection group:gct-oradb-demo-prd01-pg
-target protection group:Not Defined
+target protection group:gct-oradb-demo-dev01-pg
 ============
 querying the volumes for protection group:gct-oradb-demo-prd01-pg
 gct-oradb-demo-prd01-data-00
@@ -49,14 +50,58 @@ gct-oradb-demo-prd01-data-01
 gct-oradb-demo-prd01-fra-00
 gct-oradb-demo-prd01-fra-01
 ============
-excluding:{'volume_id': 'xxdd246ff7-9104-71cd-0320-8915f47aa77e'}
+querying the volumes for protection group:gct-oradb-demo-dev01-pg
+gct-oradb-demo-dev01-data-00
+gct-oradb-demo-dev01-data-01
+gct-oradb-demo-dev01-fra-00
+gct-oradb-demo-dev01-fra-01
+============
+creating snapshot for gct-oradb-demo-prd01-pg
+============
 excluding:{'volume_id': 'dd246ff7-9104-71cd-0320-8915f47aa77e'}
+excluding:{'volume_id': 'dd246ff7-9104-71cd-0320-8915f47aa77f'}
 ============
-listing the volumes for snapshot:dec051652
-name:sn1-x90r2-f06-27:gct-oradb-demo-prd01-pg.dec051652.gct-oradb-demo-prd01-data-00 size:120.0 GB
-name:sn1-x90r2-f06-27:gct-oradb-demo-prd01-pg.dec051652.gct-oradb-demo-prd01-data-01 size:120.0 GB
-name:sn1-x90r2-f06-27:gct-oradb-demo-prd01-pg.dec051652.gct-oradb-demo-prd01-fra-00 size:40.0 GB
-name:sn1-x90r2-f06-27:gct-oradb-demo-prd01-pg.dec051652.gct-oradb-demo-prd01-fra-01 size:40.0 GB
+listing the volumes for snapshot:dec051707
+name:gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-00 size:120.0 GB
+name:gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-01 size:120.0 GB
+name:gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-00 size:40.0 GB
+name:gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-01 size:40.0 GB
 ============
-program terminated
+querying the volumes for protection group:gct-oradb-demo-dev01-pg
+gct-oradb-demo-dev01-data-00
+gct-oradb-demo-dev01-data-01
+gct-oradb-demo-dev01-fra-00
+gct-oradb-demo-dev01-fra-01
+============
+querying target volume details
+name:gct-oradb-demo-dev01-data-00 id:a67641ac-9a36-c375-baf1-298c8a98ffe5 size:120.0
+   is a target for gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-00 size:120.0 GB
+name:gct-oradb-demo-dev01-data-01 id:ee320b80-0bec-5a70-5032-87565859e10f size:120.0
+   is a target for gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-01 size:120.0 GB
+name:gct-oradb-demo-dev01-fra-00 id:173bdf4e-5d71-c89d-8e00-9746337999da size:40.0
+   is a target for gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-00 size:40.0 GB
+name:gct-oradb-demo-dev01-fra-01 id:d2680577-4c5f-f094-0a92-98f01e85c7a8 size:40.0
+   is a target for gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-01 size:40.0 GB
+============
+determining volume mapping
+nm:gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-00 src id:a5abc4c3-f199-c026-7c97-a2468e4b5fda map:0 sz:120.0
+  checking for tag matched volume
+    volume gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-00 will be synced to gct-oradb-demo-dev01-data-00
+nm:gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-01 src id:6c2937de-c30e-dde0-9613-fb15a06966b3 map:0 sz:120.0
+  checking for tag matched volume
+    volume gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-01 will be synced to gct-oradb-demo-dev01-data-01
+nm:gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-00 src id:cbda1d30-1313-4b3e-df61-f1fa35957ac3 map:0 sz:40.0
+  checking for tag matched volume
+    volume gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-00 will be synced to gct-oradb-demo-dev01-fra-00
+nm:gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-01 src id:feabf082-e2ce-aaa5-b1ea-8adfd586a7c4 map:0 sz:40.0
+  checking for tag matched volume
+    volume gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-01 will be synced to gct-oradb-demo-dev01-fra-01
+============
+mapping the volumes
+gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-00 will be syncd to gct-oradb-demo-dev01-data-00
+gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-data-01 will be syncd to gct-oradb-demo-dev01-data-01
+gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-00 will be syncd to gct-oradb-demo-dev01-fra-00
+gct-oradb-demo-prd01-pg.dec051707.gct-oradb-demo-prd01-fra-01 will be syncd to gct-oradb-demo-dev01-fra-01
+============
+complete
 </code>
