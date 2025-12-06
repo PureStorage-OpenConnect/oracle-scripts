@@ -14,10 +14,11 @@ If replication is set up for the source protection group, the snapshot can be re
 -r replicate the snapshot to the targets specified in the source protection group (optional)\
 -o output file with the names of the snapshot volumes (optional)\
 -i ignore tag (optional - see below)\
--x execute Lock - if this is left off, no destructive actions will be taken.  Rather the script will simply tell you would it would do.  Useful to make sure you have all the settings right before you actually sync a snapshot.\
+-x execute Lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you would it would do.  This may prove useful to make sure you have all the settings right before you  overwrite a target protection group.\
 
 # Notes:
 
 If replication is not specified, both the source and target protection groups are assumed to be on the source Flash Array, and the target Flash Array is ignored.\
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST and API_TOKEN for authentication to the source Flash Array.\
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST_TGT and API_TOKEN_TGT for authentication to the target Flash Array.\
+
