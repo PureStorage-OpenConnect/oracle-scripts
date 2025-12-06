@@ -25,7 +25,7 @@ The Python code in this repository relies on [pypureclient Python library.](http
 Python code that interacts with Oracle also requires the [oracledb Python library.](https://pypi.org/project/oracledb)
 
 # Sub Repositories
-This repository contains several sub-directories:\
+This repository contains several sub-directories:
 
 * bash - simple Linux bash scripts to clone an Oracle database on Pure Flash Array.
 * fa_pg_snap - Python script to snapshot and optionally clone a Pure Flash Array protection group.  (Not database aware).
