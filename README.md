@@ -27,7 +27,7 @@ Python code that interacts with Oracle also requires the [oracledb Python librar
 # Sub Repositories
 This repository contains several sub-directories:\
 
-* bash - simple Linux bash scripts to clone an Oracle database on Pure Flash Array.\
-* fa_pg_snap - Python script to snapshot and optionally clone a Pure Flash Array protection group.  (Not database aware).\
+* bash - simple Linux bash scripts to clone an Oracle database on Pure Flash Array.
+* fa_pg_snap - Python script to snapshot and optionally clone a Pure Flash Array protection group.  (Not database aware).
 * fa_pg_ora_snap - Python script to snapshot and optionally clone an Oracle database using Pure Flash Array protection groups.
 
