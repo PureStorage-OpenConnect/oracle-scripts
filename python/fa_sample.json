@@ -1,0 +1,6 @@
+{
+    "src_flash_array_host": "sn1-x90r2-f06-27.puretec.purestorage.com",
+    "src_flash_array_api_token": "itsasecret",
+    "tgt_flash_array_host": "sn1-x90r2-f06-33.puretec.purestorage.com",
+    "tgt_flash_array_api_token": "itsasecret"
+}
