@@ -24,8 +24,7 @@ If the JSON file does not specify authentication credentials, the code will try 
 
 # Excluding Volumes in the Protection Group
 
-In some scenarios you may with to exclude volumes from the snapshot-copy.  For example, VVOLs include a config VVOL that must NOT be overwritten.\
-In this example, the JSON file allows the user to specify source volumes in the protection group that will NOT be sync'd to target volumes in the target protection group.
+In some scenarios you may with to exclude volumes from the snapshot-copy.  For example, RAC cluster disks might be included in the protection group to protect the source RAC cluster from failure or corruption, but you would not wish to overwrite RSC cluster disks on a target system if you were cloning the database to a new cluster. In this example, the JSON file allows the user to specify source volumes in the protection group that will NOT be sync'd to target volumes in the target protection group.
 
 # Source snapshot/target volume pairing
 
