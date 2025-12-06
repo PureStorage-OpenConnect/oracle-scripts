@@ -2,5 +2,10 @@
     "src_flash_array_host": "sn1-x90r2-f06-27.puretec.purestorage.com",
     "src_flash_array_api_token": "itsasecret",
     "tgt_flash_array_host": "sn1-x90r2-f06-33.puretec.purestorage.com",
-    "tgt_flash_array_api_token": "itsasecret"
+    "tgt_flash_array_api_token": "itsasecret",
+    "_comment": "list of volumes to exclude",
+    "excluded_volumes": [
+      { "volume_id": "dd246ff7-9104-71cd-0320-8915f47aa77e" },
+      { "volume_id": "dd246ff7-9104-71cd-0320-8915f47aa77f" }
+    ]
 }
