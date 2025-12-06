@@ -20,11 +20,7 @@ Array-based snapshots are used to decouple database operations from the size of 
 
 # Technical Requirements
 All scripts in this repository are designed for Linux.  Most will probably run on UNIX with minor modification.\
-The bash code in this repository relies upon the purevol executable being installed locally.\
+The shell scripts in this repository relies upon the purevol executable being installed locally.\
 The Python code in this repository relies on [pypureclient Python library.](https://pypi.org/project/py-pure-client)\
 Python code that interacts with Oracle also requires the [oracledb Python library.](https://pypi.org/project/oracledb)
 
-
-clonedb.sh - Script to clone single instance Oracle database mounted on filesystems
-
-repSnap.sh - Script to refresh the target protection group with the latest snapshot from the source protection group
