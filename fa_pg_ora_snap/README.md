@@ -25,7 +25,7 @@ Note - many database parameters must be specified in the JSON file - see below:
 
 # JSON file settings:
 
-* rescan_scsi_bus - how to scan for new ASM disks
+* rescan_scsi_bus - how to scan for new ASM disks (two examples are included in the repository)
 * asm_sid - ASM SID on the target machine
 * asm_home - ASM home on the target machine
 * oracle_sid - Oracle SID of the cloned database (must exist on the target server)
