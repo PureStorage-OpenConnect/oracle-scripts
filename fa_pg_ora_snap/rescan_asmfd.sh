@@ -1,7 +1,7 @@
 # rescan for ASM devices and list ASM disks
 # use this version with ASM Filter Drivers are used
 # add to sudoers for oracle
-# oracle  ALL=(ALL:ALL) NOPASSWD: /root/udev/rescan_asm.sh
+# oracle  ALL=(ALL:ALL) NOPASSWD: /root/udev/rescan_asmfd.sh
 
 export ORACLE_SID=+ASM
 export ORAENV_ASK=NO
