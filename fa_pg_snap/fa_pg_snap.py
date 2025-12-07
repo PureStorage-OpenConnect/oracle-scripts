@@ -364,7 +364,7 @@ def fCreateVolumeMap( ):
                 tgt_name = lst_tgt_vals[1]
                 tgt_size = lst_tgt_vals[2]
 
-                #print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{tgt_size/1073741824}' )
+                #print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{int(tgt_size)/1073741824}' )
 
                 # if the targets smap matched source id
                 if( src_tmap=='0' and tgt_smap==src_key ):
@@ -387,7 +387,7 @@ def fCreateVolumeMap( ):
                 tgt_name = lst_tgt_vals[1]
                 tgt_size = lst_tgt_vals[2]
 
-                print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{tgt_size/1073741824}' )
+                print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{int(tgt_size)/1073741824}' )
 
                 if( src_tmap=='0' and tgt_smap=='0' and int(tgt_size)==int(src_size) ):
 #                    print( 'volume '+src_name+' will be synced to '+tgt_name )
