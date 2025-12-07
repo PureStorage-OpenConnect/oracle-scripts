@@ -1,5 +1,8 @@
-# this code should be executable by the grid and or oracle users using sudo without a password
-# use visudo to add this to the list of sudoers
+# rescan for ASM devices and list ASM disks
+# use this version with ASM Filter Drivers are used
+# add to sudoers for oracle
+# oracle  ALL=(ALL:ALL) NOPASSWD: /root/udev/rescan_asm.sh
+
 export ORACLE_SID=+ASM
 export ORAENV_ASK=NO
 source /root/.bash_profile
