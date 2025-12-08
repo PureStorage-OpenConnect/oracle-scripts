@@ -41,7 +41,7 @@ Note - many database parameters must be specified in the JSON file - see below:
 # Notes:
 
 When fully cloning a database from source to target, the code must execute on the target database server as a privileged user able to mount ASM diskgroups and start the target database.  This code assumes that the ASM Grid Infrastructure is owned by the same oracle user as the database.\
-This code required password-less sudo privileges to execute the rescan_asm.sh script.\
+This code required password-less sudo privileges to execute the rescan_afd.sh script.\
 If replication is not specified, both the source and target protection groups are assumed to be on the source Flash Array, and the target Flash Array is ignored.\
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST and API_TOKEN for authentication to the source Flash Array.\
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST_TGT and API_TOKEN_TGT for authentication to the target Flash Array.
