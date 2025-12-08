@@ -33,8 +33,7 @@ version = "1.0.0"
 not_defined = "Not Defined"
 
 # main dictionary for script variables
-dictMain={}
-dictData={}
+dictArgs={}
 
 # dictionaries of souce and target volumes
 # each dictionary uses id as key then volname|size
@@ -78,7 +77,7 @@ def fNotNone( foo, bar ):
 
 def fDictBool( key, default_bool ):
     rbool = default_bool
-    xx = dictMain.get ( key, not_defined )
+    xx = dictArgs.get ( key, not_defined )
     if( xx=="True" ): rbool=True
     if( xx=="False" ): rbool=False
     return rbool
@@ -387,7 +386,7 @@ def fCreateVolumeMap( ):
                 tgt_name = lst_tgt_vals[1]
                 tgt_size = lst_tgt_vals[2]
 
-                print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{tgt_size/1073741824}' )
+                print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{int(tgt_size)/1073741824}' )
 
                 if( src_tmap=='0' and tgt_smap=='0' and int(tgt_size)==int(src_size) ):
 #                    print( 'volume '+src_name+' will be synced to '+tgt_name )
@@ -565,12 +564,12 @@ def doMain( ):
     #
     # read the config file
     #
-    dictMain={}
-    if( args.config_file != None ): dictMain = fReadConnectionJSON( args.config_file )
+    dictArgs={}
+    if( args.config_file != None ): dictArgs = fReadConnectionJSON( args.config_file )
 
     # fa variables for source array
-    src_flash_array = dictMain.get( "src_flash_array_host", os.environ.get('FA_HOST') )
-    src_flash_array_api_token = dictMain.get( "src_flash_array_api_token", os.environ.get('API_TOKEN') )
+    src_flash_array = dictArgs.get( "src_flash_array_host", os.environ.get('FA_HOST') )
+    src_flash_array_api_token = dictArgs.get( "src_flash_array_api_token", os.environ.get('API_TOKEN') )
 
     if( src_flash_array==None or src_flash_array_api_token==None ):
         mQuit( 'src_flash_array_host and src_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -584,8 +583,8 @@ def doMain( ):
     #
     # get the source and optional target protection groups
     #
-    source_protection_group=fNotNone( args.source_protection_group, dictMain.get( "source_protection_group", not_defined ))
-    target_protection_group=fNotNone( args.target_protection_group, dictMain.get( "target_protection_group", not_defined ))
+    source_protection_group=fNotNone( args.source_protection_group, dictArgs.get( "source_protection_group", not_defined ))
+    target_protection_group=fNotNone( args.target_protection_group, dictArgs.get( "target_protection_group", not_defined ))
 
 
     #
@@ -596,8 +595,8 @@ def doMain( ):
         if( source_protection_group==not_defined ): mQuit( 'replicate specified but source protection group is not defined' )
 
         # fa variables for target array
-        tgt_flash_array = dictMain.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
-        tgt_flash_array_api_token = dictMain.get( "tgt_flash_array_api_token", os.environ.get('API_TOKEN_TGT') )
+        tgt_flash_array = dictArgs.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
+        tgt_flash_array_api_token = dictArgs.get( "tgt_flash_array_api_token", os.environ.get('API_TOKEN_TGT') )
 
         if( tgt_flash_array==None or tgt_flash_array_api_token==None ):
             mQuit( 'tgt_flash_array_host and tgt_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -671,7 +670,7 @@ def doMain( ):
     # get any excluded volumes - VVOL config volumes need to be excluded
     #
     print( '============' )
-    lst_excluded_vols = dictMain.get( "excluded_volumes", [] )
+    lst_excluded_vols = dictArgs.get( "excluded_volumes", [] )
     for vol in lst_excluded_vols: print( f'excluding:{vol}' )
 
 
@@ -690,7 +689,7 @@ def doMain( ):
     #
     if( args.output_file != None ):
         print( '============' )
-        lst_excluded_vols = dictMain.get( "excluded_volumes", [] )
+        lst_excluded_vols = dictArgs.get( "excluded_volumes", [] )
         for vol in lst_excluded_vols: print ( f'excluding:{vol}' )
         mWriteVolumesinSnapshot( args.output_file, lst_excluded_vols )
 
@@ -749,3 +748,5 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
+
+
