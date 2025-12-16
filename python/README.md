@@ -11,4 +11,4 @@ This repository contains several sub-directories:
 
 * [fa_pg_snap](./fa_pg_snap/) - Python script to snapshot and optionally clone a Pure Flash Array protection group.  (Not database aware).
 * [fa_pg_ora_snap](./fa_pg_ora_snap) - Python script to snapshot and optionally clone an Oracle database using Pure Flash Array protection groups.
-
+* [fa_pg_ora_snap_remote](./fa_pg_ora_snap_remote) - Python script to snapshot and clone an Oracle database to/from remote servers.
