@@ -1,5 +1,5 @@
 {
-    "src_flash_array_host": "sn1-x90r2-f06-27.puretec.purestorage.com",
+    "src_flash_array_host": "source_flash_array.localdomain",
     "src_flash_array_api_token": "itsasecret",
     "rescan_scsi_bus": "sudo /root/udev/rescan_afd.sh",
     "source_protection_group": "gct-oradb-demo-prd01-pg",
@@ -13,6 +13,6 @@
     "db_unique_name": "swingdev",
     "ora_src_usr": "sys",
     "ora_src_pwd": "oracle",
-    "ora_src_cs": "gct-oradb-demo-prd01:1521/SJC",
+    "ora_src_cs": "my_source_host.localdomain:1521/SJC",
     "ora_backup_mode": "False"
 }
