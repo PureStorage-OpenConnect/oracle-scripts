@@ -5,7 +5,7 @@
     "src_protection_group": "gct-oradb-rdmudev01-pg",
     "tgt_protection_group": "gct-oradb-rdmudev02-pg",
     "oracle_target_mode": "DOWN",
-    "local_listener": "(ADDRESS=(PROTOCOL=TCP)(HOST=targte_host.localdomain)(PORT=1521))",
+    "local_listener": "(ADDRESS=(PROTOCOL=TCP)(HOST=target_host.localdomain)(PORT=1521))",
 
     "ora_src_usr": "sys",
     "ora_src_pwd": "change_on_install",
@@ -21,7 +21,7 @@
     "def_cs_db": "connect / as sysdba",
     "def_cs_asm": "connect / as sysasm",
 
-    "tgt_host": "gct-oradb-rdmudev02",
+    "tgt_host": "target_host.localdomain",
     "tgt_db": "swingdb",
     "tgt_user_grid": "oracle",
     "tgt_pass_grid": "itsasecret",
