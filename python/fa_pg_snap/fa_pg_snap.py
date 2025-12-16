@@ -133,7 +133,7 @@ def fFAConnect( my_flash_array, my_flash_array_api_token ):
     try:
         array=flasharray.Client( target=my_flash_array, api_token=my_flash_array_api_token )
 
-        response = array.get_volumes()
+        response = array.get_arrays()
 
         if ( response.status_code == 200): print( "connected" )
         else: mError( halt, response.status_code, response.reason )
@@ -143,6 +143,21 @@ def fFAConnect( my_flash_array, my_flash_array_api_token ):
 
     return array
 
+#
+# get the name of the Flash Array - used for replication
+#
+def fFAQueryName( my_array ):
+
+    try:
+        response = my_array.get_arrays()
+        arrays = list(response.items)
+        array_name = arrays[0].name
+        return array_name
+
+    except:
+
+        return not_found
+
 
 #
 # check if the snapshot exists
@@ -151,7 +166,7 @@ def fFAConnect( my_flash_array, my_flash_array_api_token ):
 def fQuerySnapExists( my_array, my_snapshot_name, my_protection_group ):
 
     print( '============' )
-    print( f'determining if snapshot {my_snapshot_name} exists for source pg:{my_protection_group}' )
+    print( f'determining if snapshot {my_snapshot_name} exists for protection group:{my_protection_group}' )
 
     try:
         response = my_array.get_protection_group_snapshots( source_names=[my_protection_group] )
@@ -163,7 +178,6 @@ def fQuerySnapExists( my_array, my_snapshot_name, my_protection_group ):
         #print( response.errors[0] )
         #print( response.errors[0].message )
 
-        #mError( halt, response.status_code, 'protection group snapshot failed' )
         mError( halt, response.status_code, response.errors[0].message )
 
     for myoutput in response.items:
@@ -181,14 +195,20 @@ def fQuerySnapExists( my_array, my_snapshot_name, my_protection_group ):
 # create the snapshot for the specified pg
 #
 
-def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_group, my_replicate ):
+def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_group, my_replicate, my_tags ):
 
     mydoc={
         'eradication_config': {'manual_eradication': 'enabled'},
         'replicate': my_replicate,
-        'suffix': my_snapshot_name
+        'replicate-now': my_replicate,
+        'for-replication': my_replicate,
+        'suffix': my_snapshot_name,
+        'tags': [] 
     }
 
+    if( my_tags != None ): mydoc['tags'] = my_tags
+
+#    print( mydoc )
 
     print( '============' )
     print( f'creating snapshot for {my_protection_group}' )
@@ -244,6 +264,7 @@ def fQueryVolsinPG( my_array, my_protection_group ):
 
 #
 # query the list of volumes in the pg for the specified snapshot
+# volumes found are added to dictSourceVols
 #
 
 def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, lst_my_vols, lst_excluded_vols ):
@@ -281,7 +302,9 @@ def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, ls
 
 #
 # query the target volumes specified in the given list
+# the list is generated in fQueryVolsinPG and holds the names of the volumes in the target protection group
 # for each volume check the size and if there is a source volume tag
+# updates are written to dictTargetVols 
 #
 
 def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols ):
@@ -333,6 +356,8 @@ def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols ):
 # then read dictTargetVols for a target volume (tmap=source id)
 # if not found, see if there is a target volume with no tmap and a matching size
 # if not found, see if there is a target volume with no tamp and a larger size
+# the purpose of this is to tag target volumes with the id of the source
+# so that every subsequent execution maps the same source to the same target
 #
 
 def fCreateVolumeMap( ):
@@ -428,14 +453,55 @@ def fCreateVolumeMap( ):
     return unmatched
 
 
+#
+# check replication status and waits in a loop until it is done
+#
+def fQuerySnapshotReplication( my_array, my_array_name, my_protection_group, my_snapshot_name, my_repeat, my_sleep, my_safe_mode ):
 
+    def fQuerySnapshotReplicationSub( my_array, my_target ):
+
+        try:
+            response = my_array.get_protection_group_snapshots_transfer( names=[my_target] )
+        except:
+            mError( halt, 0, 'call to get_protection_group_snapshots_transfer failed' )
+
+        if ( response.status_code != 200 ): mError( halt, response.status_code, 'call to get_protection_group_snapshots_transfer failed' )
+        data = list(response.items)
+        progress = data[0].progress
+
+        return progress
+
+    if( my_safe_mode==True): return 
+
+    # build the name of the target snapshot to look for 
+    # it will be src_array_name:src_pg:snapname
+    my_target = my_array_name+':'+my_protection_group+'.'+my_snapshot_name
+
+    print( '============' )
+    print( 'waiting on snapshot replication' )
+
+    count=0
+    retval=False
+    while( count<my_repeat ):
+        count+=1
+        progress = fQuerySnapshotReplicationSub( my_array, my_target )
+        if( int(progress)>=1 ): 
+            retval=True
+            break
+        time.sleep(my_sleep)
+
+    return retval
+    
 #
 # process the dictSourceVols and then fetch the matching volume from dictTargetVols
 # use the REST API call to sync the target to the source snapshot volume
+# call fMapVolumesSub until it succeeds
+# this is useful for replication scenarios where it might take a few minutes for the 
+# snapshot to replicate
 #
 
 def fMapVolumes( my_array, my_safe_mode ):
-
+    
     print( '============' )
     print( 'mapping the volumes' )
 
@@ -478,7 +544,7 @@ def fMapVolumes( my_array, my_safe_mode ):
                     mError( halt, 0, 'call to post_volumes failed' )
 
                 #if ( response.status_code != 200 ): mError( halt, response.status_code, response.errors[0].message )
-                if ( response.status_code != 200 ): return response.errors[0].message 
+                if ( response.status_code != 200 ): return response.errors[0].message
 
                 # record the mapping so that when we refresh, the same disks map to the same volumes
                 kv={
@@ -578,6 +644,7 @@ def doMain( ):
     # connect to the source FA
     #
     myArraySrc = fFAConnect( src_flash_array, src_flash_array_api_token )
+    src_array_name = fFAQueryName( myArraySrc )
 
 
     #
@@ -605,6 +672,7 @@ def doMain( ):
         # connect to the target FA
         #
         myArrayTgt = fFAConnect( tgt_flash_array, tgt_flash_array_api_token )
+        tgt_array_name = fFAQueryName( myArrayTgt )
 
         
         #
@@ -620,6 +688,7 @@ def doMain( ):
     else:
 
         myArrayTgt = myArraySrc
+        tgt_array_name = src_array_name
 
 
 
@@ -653,7 +722,7 @@ def doMain( ):
     # if the snapshot does not exist create it
     # if safety lock engaged this will return a null string
     #
-    if( not source_snap_exists ): snapshot_name=fCreateSnapshot( myArraySrc, args.execute_lock, snapshot_name, source_protection_group, args.replicate )
+    if( not source_snap_exists ): snapshot_name=fCreateSnapshot( myArraySrc, args.execute_lock, snapshot_name, source_protection_group, args.replicate, None )
 
 
 
@@ -724,21 +793,20 @@ def doMain( ):
     fCreateVolumeMap( )
 
 
+    #
+    # if replication is specified check the snapshot replicated
+    #
+    if( args.replicate ):    
+        retval = fQuerySnapshotReplication( myArrayTgt, src_array_name, source_protection_group, snapshot_name, 10, 5, args.execute_lock )
+        if( retval==False ):
+            mError( halt, 0, 'snapshot replication did not complete in the time allowed' )
 
     #
     # process the dictSourceVols and then fetch the matching volume from dictTargetVols
     #
-    for i in range(20):
-    
-        my_return = fMapVolumes( myArrayTgt, args.execute_lock )
-        if my_return=="": break
-        time.sleep(2)
+    fMapVolumes( myArrayTgt, args.execute_lock )
 
 
-    if my_return!="": 
-
-        print( '============' )
-        print( f'ERROR - map did not complete:{my_return}' )
 
     #
     # end of program
