@@ -56,49 +56,44 @@ dictDBParams={}
 
 ##############################################
 
-#
-# tag the snapshot with the database time
-#
-def fTagSnapshot( my_array, my_snap_exists, lst_source_vols, my_snapshot_name, my_protection_group, my_tag_key, my_tag_val, my_vvol ):
+def mTagSnapshot( my_array, my_snapshot_exists, my_vols, my_protection_group, my_snapshot_name, my_safe_mode, my_remote ):
 
-    count=0
+    def fWriteSnapshotTag( my_array, lst_vols, my_protection_group, my_snapshot_name, my_tag_key, my_tag_val, my_vvol, my_remote ):
 
-    if ( not my_snap_exists and not my_vvol) :
+        count=0
+
         print( f'tagging the snapshot: key:{my_tag_key} val:{my_tag_val}' )
 
-    # get a list of snapshots for the source pg volumes
-    response = my_array.get_volume_snapshots( source_names=lst_source_vols )
+        # get a list of snapshots for the protection group volumes
+        # on a replicated target we would need to prefix the array name
+        # so we just grab all of the snapshot volumes
+        response = my_array.get_volume_snapshots( source_names=lst_vols )
+        if( my_remote ): response = my_array.get_volume_snapshots( )
 
-    # for each snapshot we find....
-    #print( response )
-    #print( f'pg:{my_protection_group} snap:{my_snapshot_name}' )
+        for myoutput in response.items:
 
-    for myoutput in response.items:
+            # check against each volume of each snapshot
+            for volume_name in lst_vols:
 
-        # check against each volume of each snapshot
-        for volume_name in lst_source_vols:
+                #
+                # if the volume is a vvol, the volume_name is prefixed with the vvol name
+                # this is not included in the snapshot name
+                # so we remove it here for the purposes of matching
+                # the removal is everything before the second colon
+                #
+                if my_vvol: volume_name = re.sub(r"^[^:]*:[^:]*:", "", volume_name)
 
-            #
-            # if the volume is a vvol, the volume_name is prefixed with the vvol name
-            # this is not included in the snapshot name
-            # so we remove it here for the purposes of matching
-            # the removal is everything before the second colon
-            #
-            if my_vvol: volume_name = re.sub(r"^[^:]*:[^:]*:", "", volume_name)
+                match = str(my_protection_group)+'.'+str(my_snapshot_name)+'.'+volume_name
 
-            match = str(my_protection_group)+'.'+str(my_snapshot_name)+'.'+volume_name
-
-            # is this volume part of our snapshot?
-            if( match==myoutput.name ):
-
-                count+=1
-
-                # if this is a new snapshot....
-                if ( not my_snap_exists ):
-
+                # is this volume part of our snapshot?
+                if myoutput.name.endswith(match):
+                
+                    count+=1
+  
                     kv={
                         'key': my_tag_key,
                         'value': my_tag_val,
+                        'copyable': True,
                     }
 
                     # tagging
@@ -110,8 +105,37 @@ def fTagSnapshot( my_array, my_snap_exists, lst_source_vols, my_snapshot_name, m
 
                     if ( response2.status_code != 200 ): fa_pg_snap.mError( halt, response2.status_code, response2.errors[0].message )
 
-                # snapshot already exists - so read the key/value
-                else:
+        return count
+
+    def fReadSnapshotTag( my_array, lst_vols, my_protection_group, my_snapshot_name, my_tag_key, my_vvol, my_remote ):
+
+        count=0
+
+        # get a list of snapshots for the protection group volumes
+        # on a replicated target we would need to prefix the array name
+        # so we just grab all of the snapshot volumes
+        response = my_array.get_volume_snapshots( source_names=lst_vols )
+        if( my_remote ): response = my_array.get_volume_snapshots( )
+
+        for myoutput in response.items:
+
+            # check against each volume of each snapshot
+            for volume_name in lst_vols:
+
+                #
+                # if the volume is a vvol, the volume_name is prefixed with the vvol name
+                # this is not included in the snapshot name
+                # so we remove it here for the purposes of matching
+                # the removal is everything before the second colon
+                #
+                if my_vvol: volume_name = re.sub(r"^[^:]*:[^:]*:", "", volume_name)
+
+                match = str(my_protection_group)+'.'+str(my_snapshot_name)+'.'+volume_name
+
+                # is this volume part of our snapshot?
+                if myoutput.name.endswith(match):
+
+                    count+=1
 
                     try:
                         response = my_array.get_volume_snapshots_tags( resource_names=[myoutput.name] )
@@ -123,14 +147,36 @@ def fTagSnapshot( my_array, my_snap_exists, lst_source_vols, my_snapshot_name, m
                     #print( response )
                     for item in response.items:
 
-                        if( item.key == my_tag_key ): 
-
+                        if( item.key == my_tag_key ):
+ 
                             dictDBParams.update({ item.key:item.value })
 
                             if( count==1 ): print( f'reading tag from snapshot {item.key}:{item.value}' )
 
+        return count
 
-    return count
+    print( '============' )
+    lst_tag_keys = ['db_name','db_id','db_time','db_unique_name','db_role','db_open_mode','archivelog_mode','flashback_mode','platform_name','encrypted_tablespaces','version','backup_mode','control_files','db_recovery_file_dest','db_recovery_file_dest_size','enable_pluggable_database','asm_disk_groups','open_pdbs']
+
+    for tag_key in lst_tag_keys:
+
+        if( my_snapshot_exists ): 
+
+            matched = fReadSnapshotTag( my_array, my_vols, my_protection_group, my_snapshot_name, tag_key, False, my_remote )
+
+            if (matched==0): fReadSnapshotTag( my_array, my_vols, my_protection_group, my_snapshot_name, tag_key, True, my_remote )
+
+        else:
+
+            # dont tag a snapshot if we are in safe mode
+            if( my_safe_mode ): break
+
+            tag_val=str(dictDBParams.get( tag_key, not_defined ))
+            matched = fWriteSnapshotTag( my_array, my_vols, my_protection_group, my_snapshot_name, tag_key, tag_val, False, my_remote )
+
+            if (matched==0): fWriteSnapshotTag( my_array, my_vols, my_protection_group, my_snapshot_name, tag_key, tag_val, True, my_remote )
+
+
 
 
 ##############################################
@@ -338,7 +384,7 @@ def mOraStartPluggable( ora_sid, ora_home, ora_target_mode ):
 
     open_pdbs = dictDBParams.get( 'open_pdbs', not_defined )
 
-    local_listener  = fa_pg_snap.dictMain.get( 'local_listener', "" )
+    local_listener  = fa_pg_snap.dictArgs.get( 'local_listener', "" )
 
     if( open_pdbs == not_defined ):
         print( 'no pluggable databases to re-open' )
@@ -387,16 +433,155 @@ def mOraResetTargetSPFILE( ora_sid, ora_home ):
         print( cmd )
 
     # see if db_unique_name is defined - if so add it to the list of parameters to reset in the target spfile file
-    db_unique_name = fa_pg_snap.dictMain.get( 'db_unique_name', not_defined ) 
+    db_unique_name = fa_pg_snap.dictArgs.get( 'db_unique_name', not_defined ) 
     if( db_unique_name != not_defined ): 
         cmd = "alter system set db_unique_name="+db_unique_name+" sid='*' scope=spfile;"
         cmd_list.append( cmd )
         print( cmd )
 
     # we need to bounce the instance to re-read the spfile
+    print( 'restarting instance' )
     cmd_list.append( 'shutdown immediate' );
 
     fOraLocalExecute( ora_sid, ora_home, "connect / as sysdba", cmd_list )
+
+#
+# connect to the source database
+# read the source database settings and optionally put it into backup mode
+#
+def fOraSourceConnect( my_source_snapshot_exists, my_backup_mode ):
+
+    #
+    # connect to the source database - if defined
+    #
+    un = fa_pg_snap.dictArgs.get( "ora_src_usr", not_defined )
+    cs = fa_pg_snap.dictArgs.get( "ora_src_cs", not_defined )
+    pw = fa_pg_snap.dictArgs.get( "ora_src_pwd", not_defined )
+
+    my_db_conn = None
+
+    if( ( not my_source_snapshot_exists ) and un != not_defined and pw != not_defined and cs != not_defined ):
+
+        print( '============' )
+        print( "connecting to source database:"+cs )
+        my_db_conn = fOracleConnect( un, pw, cs )
+
+        print( f'use backup mode:{my_backup_mode}' )
+        dictDBParams.update({ "backup_mode": ("Yes" if my_backup_mode else "No")})
+
+        print( '============' )
+        print( 'reading source database settings' )
+
+        # get the asm dg list from the source database
+        sql = "select name from v$asm_diskgroup where state='CONNECTED'"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "asm_disk_groups": my_result })
+        print( f'asm diskgroups: {my_result}' )
+
+        # get the database name
+        sql = "select name from v$database"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "db_name": my_result })
+        print( f'database name: {my_result}' )
+
+        # get the database id
+        sql = "select dbid from v$database"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "db_id": my_result })
+        print( f'database id: {my_result}' )
+
+        # get the database time
+        sql = "select to_char(sysdate,'YYYY/MM/DD HH24:MI:SS') from v$database"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "db_time": my_result })
+        print( f'database time: {my_result}' )
+
+        # get the database unique name
+        sql = "select db_unique_name from v$database"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "db_unique_name": my_result })
+
+        # get the database open mode
+        sql = "select open_mode from v$database"
+        my_db_open_mode = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "db_open_mode": my_db_open_mode })
+        print( f'database open mode: {my_db_open_mode}' )
+
+        # get the database role
+        sql = "select database_role from v$database"
+        my_db_role = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "db_role": my_db_role })
+        print( f'database role: {my_db_role}' )
+
+        # we can only read DBA_TABLESPACES if the source is open
+        my_result=0
+        if( my_db_open_mode == 'READ WRITE' and my_db_role == 'PRIMARY' ):
+            # how many tablespaces are encrypted
+            sql = "select count(*) from dba_tablespaces where upper(encrypted)!='NO'"
+            my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "encrypted_tablespaces": my_result })
+        print( f'encrypted tablespaces: {my_result}' )
+
+        # get the archivelog mode
+        sql = "select log_mode from v$database"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "archivelog_mode": my_result })
+        print( f'archivelog mode: {my_result}' )
+
+        # get the flashback mode
+        sql = "select flashback_on from v$database"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "flashback_mode": my_result })
+        print( f'flashback mode: {my_result}' )
+
+        # get the platform
+        sql = "select platform_name from v$database"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "platform_name": my_result })
+        print( f'platform name: {my_result}' )
+
+        # get the version
+        sql = "select banner_full from v$version"
+        my_result = fSQLExecute( my_db_conn, sql )
+        dictDBParams.update({ "version": my_result })
+        print( f'version: {my_result}' )
+
+        # gather parameter information
+        for parameter in lst_db_parameters:
+            sql = "select value from v$parameter where name = '"+parameter+"'"
+            my_result = fSQLExecute( my_db_conn, sql )
+            dictDBParams.update({ parameter: my_result })
+            print( f'{parameter}: {my_result}' )
+
+        #for r in lst_result: print( r )
+
+        # if we are a container database....
+        myres = dictDBParams.get( 'enable_pluggable_database', [] )
+        if( str(myres)=='TRUE' ):
+
+            # get the open pluggable databases
+            print( 'identifying the open pluggable databases' )
+
+            sql = "select name from v$pdbs where open_mode='READ WRITE'"
+            my_result = fSQLExecute( my_db_conn, sql )
+
+            if( len( my_result )==0 ):
+                print( 'no open pluggable databases found' )
+
+            else:
+                print( f'open pdbs: {my_result}' )
+                dictDBParams.update({ "open_pdbs": my_result })
+
+
+        # begin backup mode if we need to make a snapshot and we want backup mode
+        if( not my_source_snapshot_exists and my_backup_mode ):
+
+            print( '============' )
+            print( 'source db begin backup mode' )
+            mSQLExecute( my_db_conn, "alter database begin backup" )
+    
+
+    return my_db_conn
 
 ##############################################
 
@@ -429,16 +614,16 @@ def doMain( ):
     print( f'fa_pg_ora_snap.py {version} started at {datetime.datetime.now()}' )
 
     caSnapshotName=args.snapshot_name
-    bSourceSnaphotExists=False
+    bSourceSnapshotExists=False
 
     #
     # read the config file
     #
-    if( args.config_file != None ): fa_pg_snap.dictMain = fa_pg_snap.fReadConnectionJSON( args.config_file )
+    if( args.config_file != None ): fa_pg_snap.dictArgs = fa_pg_snap.fReadConnectionJSON( args.config_file )
 
     # fa variables for source array
-    src_flash_array = fa_pg_snap.dictMain.get( "src_flash_array_host", os.environ.get('FA_HOST') )
-    src_flash_array_api_token = fa_pg_snap.dictMain.get( "src_flash_array_api_token", os.environ.get('API_TOKEN') )
+    src_flash_array = fa_pg_snap.dictArgs.get( "src_flash_array_host", os.environ.get('FA_HOST') )
+    src_flash_array_api_token = fa_pg_snap.dictArgs.get( "src_flash_array_api_token", os.environ.get('API_TOKEN') )
 
     if( src_flash_array==None or src_flash_array_api_token==None ):
         fa_pg_snap.mQuit( 'src_flash_array_host and src_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -447,6 +632,7 @@ def doMain( ):
     # connect to the source FA
     #
     myArraySrc = fa_pg_snap.fFAConnect( src_flash_array, src_flash_array_api_token )
+    src_array_name = fa_pg_snap.fFAQueryName( myArraySrc )
 
     #
     # do we want to replicate this snapshot?
@@ -454,8 +640,8 @@ def doMain( ):
     if( args.replicate ):
 
         # fa variables for target array
-        tgt_flash_array = fa_pg_snap.dictMain.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
-        tgt_flash_array_api_token = fa_pg_snap.dictMain.get( "tgt_flash_array_api_token", os.environ.get('API_TOKEN_TGT') )
+        tgt_flash_array = fa_pg_snap.dictArgs.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
+        tgt_flash_array_api_token = fa_pg_snap.dictArgs.get( "tgt_flash_array_api_token", os.environ.get('API_TOKEN_TGT') )
 
         if( tgt_flash_array==None or tgt_flash_array_api_token==None ):
             fa_pg_snap.mQuit( 'tgt_flash_array_host and tgt_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -464,24 +650,26 @@ def doMain( ):
         # connect to the target FA
         #
         myArrayTgt = fa_pg_snap.fFAConnect( tgt_flash_array, tgt_flash_array_api_token )
+        tgt_array_name = fa_pg_snap.fFAQueryName( myArrayTgt )
 
     else:
 
         myArrayTgt = myArraySrc    
+        tgt_array_name = src_array_name
 
 
     #
     # get the source and optional target protection groups
     #
-    caSourceProtectionGroup=fa_pg_snap.fNotNone( args.source_protection_group, fa_pg_snap.dictMain.get ( "source_protection_group", not_defined ))
-    caTargetProtectionGroup=fa_pg_snap.fNotNone( args.target_protection_group, fa_pg_snap.dictMain.get ( "target_protection_group", not_defined ))
+    caSourceProtectionGroup=fa_pg_snap.fNotNone( args.source_protection_group, fa_pg_snap.dictArgs.get ( "source_protection_group", not_defined ))
+    caTargetProtectionGroup=fa_pg_snap.fNotNone( args.target_protection_group, fa_pg_snap.dictArgs.get ( "target_protection_group", not_defined ))
 
 
     #
     # check if the source pg has the requested snapshot
     #
 
-    bSourceSnaphotExists=fa_pg_snap.fQuerySnapExists( myArraySrc, caSnapshotName, caSourceProtectionGroup )
+    bSourceSnapshotExists=fa_pg_snap.fQuerySnapExists( myArraySrc, caSnapshotName, caSourceProtectionGroup )
 
     print( f'source protection group:{caSourceProtectionGroup}' )
     print( f'target protection group:{caTargetProtectionGroup}' )
@@ -489,10 +677,10 @@ def doMain( ):
     #
     # oracle target/local variables
     #
-    ora_sid = fa_pg_snap.dictMain.get( "oracle_sid", not_defined )
-    ora_home = fa_pg_snap.dictMain.get( "oracle_home", not_defined )
+    ora_sid = fa_pg_snap.dictArgs.get( "oracle_sid", not_defined )
+    ora_home = fa_pg_snap.dictArgs.get( "oracle_home", not_defined )
 
-    ora_target_mode = fa_pg_snap.fNotNone( args.open_mode, fa_pg_snap.dictMain.get( "oracle_target_mode", "DOWN" ))
+    ora_target_mode = fa_pg_snap.fNotNone( args.open_mode, fa_pg_snap.dictArgs.get( "oracle_target_mode", "DOWN" ))
     ora_target_mode = ora_target_mode.upper()
 
     if( ora_target_mode.upper() not in ['DOWN','STARTED','MOUNTED','OPEN']):
@@ -509,137 +697,12 @@ def doMain( ):
     bBackupMode = ( bBackupMode | bool(args.backup_mode) )
 
     # get the target ASM instance details
-    asm_sid = fa_pg_snap.dictMain.get( "asm_sid", not_defined )
-    asm_home = fa_pg_snap.dictMain.get( "asm_home", not_defined )
+    asm_sid = fa_pg_snap.dictArgs.get( "asm_sid", not_defined )
+    asm_home = fa_pg_snap.dictArgs.get( "asm_home", not_defined )
 
 
-    #
-    # connect to the source database - if defined
-    #
-    un = fa_pg_snap.dictMain.get( "ora_src_usr", not_defined )
-    cs = fa_pg_snap.dictMain.get( "ora_src_cs", not_defined )
-    pw = fa_pg_snap.dictMain.get( "ora_src_pwd", not_defined )
-
-    dbSourceConnection = None
-
-    if( ( not bSourceSnaphotExists ) and un != not_defined and pw != not_defined and cs != not_defined ):
-
-        print( '============' )
-        print( "connecting to source database:"+cs )
-        dbSourceConnection = fOracleConnect( un, pw, cs )
-
-        print( f'use backup mode:{bBackupMode}' )
-        dictDBParams.update({ "backup_mode": ("Yes" if bBackupMode else "No")})
-
-        # get the asm dg list from the source database
-        sql = "select name from v$asm_diskgroup where state='CONNECTED'"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "asm_disk_groups": my_result }) 
-
-        print( '============' )
-        print( 'reading source database settings' )
-
-        # get the database name
-        sql = "select name from v$database"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "db_name": my_result })
-        print( f'database name: {my_result}' ) 
-
-        # get the database id
-        sql = "select dbid from v$database"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "db_id": my_result })
-        print( f'database id: {my_result}' ) 
-
-        # get the database time
-        sql = "select to_char(sysdate,'YYYY/MM/DD HH24:MI:SS') from v$database"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "db_time": my_result })
-        print( f'database time: {my_result}' ) 
-
-        # get the database unique name 
-        sql = "select db_unique_name from v$database"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "db_unique_name": my_result })
-        print( f'database unique name: {my_result}' ) 
-
-        # get the database open mode
-        sql = "select open_mode from v$database"
-        my_db_open_mode = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "db_open_mode": my_db_open_mode })
-        print( f'database open mode: {my_db_open_mode}' )
-
-        # get the database role
-        sql = "select database_role from v$database"
-        my_db_role = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "db_role": my_db_role })
-        print( f'database role: {my_db_role}' )
-
-        # we can only read DBA_TABLESPACES if the source is open
-        my_result=0
-        if( my_db_open_mode == 'READ WRITE' and my_db_role == 'PRIMARY' ):
-            # how many tablespaces are encrypted
-            sql = "select count(*) from dba_tablespaces where upper(encrypted)!='NO'"
-            my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "encrypted_tablespaces": my_result })
-        print( f'encrypted tablespaces: {my_result}' )
-
-        # get the archivelog mode 
-        sql = "select log_mode from v$database"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "archivelog_mode": my_result })
-        print( f'archivelog mode: {my_result}' ) 
-
-        # get the flashback mode 
-        sql = "select flashback_on from v$database"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "flashback_mode": my_result })
-        print( f'flashback mode: {my_result}' ) 
-
-        # get the platform 
-        sql = "select platform_name from v$database"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "platform_name": my_result })
-        print( f'platform name: {my_result}' ) 
-
-        # get the version 
-        sql = "select banner_full from v$version"
-        my_result = fSQLExecute( dbSourceConnection, sql )
-        dictDBParams.update({ "version": my_result })
-        print( f'version: {my_result}' ) 
-
-        # gather parameter information
-        for parameter in lst_db_parameters:
-            sql = "select value from v$parameter where name = '"+parameter+"'"
-            my_result = fSQLExecute( dbSourceConnection, sql )
-            dictDBParams.update({ parameter: my_result })
-            print( f'{parameter}: {my_result}' )
-
-        #for r in lst_result: print( r )
-
-        # if we are a container database....
-        myres = dictDBParams.get( 'enable_pluggable_database', [] )
-        if( str(myres)=='TRUE' ):
-
-            # get the open pluggable databases
-            print( 'identifying the open pluggable databases' )
-
-            sql = "select name from v$pdbs where open_mode='READ WRITE'"
-            my_result = fSQLExecute( dbSourceConnection, sql )
-
-            if( len( my_result )==0 ):
-                print( 'no open pluggable databases found' )
-
-            else:
-                print( f'open pdbs: {my_result}' )
-                dictDBParams.update({ "open_pdbs": my_result })
-
-        # begin backup mode if we need to make a snapshot and we want backup mode
-        if( not bSourceSnaphotExists and bBackupMode ):
-
-            print( '============' )
-            print( 'source db begin backup mode' )
-            mSQLExecute( dbSourceConnection, "alter database begin backup" )
+    # connect to the source, read v$parameter and put it into backup mode
+    dbSourceConnection = fOraSourceConnect( bSourceSnapshotExists, bBackupMode )
 
 
     #
@@ -647,7 +710,7 @@ def doMain( ):
     # if safety lock engaged this will return a null string
     #
 
-    if( not bSourceSnaphotExists ): caSnapshotName=fa_pg_snap.fCreateSnapshot( myArraySrc, args.execute_lock, caSnapshotName, caSourceProtectionGroup, args.replicate )
+    if( not bSourceSnapshotExists ): caSnapshotName=fa_pg_snap.fCreateSnapshot( myArraySrc, args.execute_lock, caSnapshotName, caSourceProtectionGroup, args.replicate, None )
 
 
     #
@@ -655,7 +718,7 @@ def doMain( ):
     # if we have a source db connection, we made a snapshot and we wanted backup mode
     #
 
-    if ( not bSourceSnaphotExists and dbSourceConnection != None and bBackupMode ):
+    if ( not bSourceSnapshotExists and dbSourceConnection != None and bBackupMode ):
 
         print( '============' )
         print( 'source db end backup mode' )
@@ -672,25 +735,16 @@ def doMain( ):
 
 
     #
-    # tag the snapshot volumes if it does not exist already
-    # if it does exist, report the value of the specified key
-    # first try regular volumes, then try vvols if not found
+    # tag the snapshot volumes with all of the key values read from the source database
     #
-    print( '============' )
-    lst_tag_keys = ['db_name','db_id','db_time','db_unique_name','db_role','db_open_mode','archivelog_mode','flashback_mode','platform_name','encrypted_tablespaces','version','backup_mode','control_files','db_recovery_file_dest','db_recovery_file_dest_size','enable_pluggable_database','asm_disk_groups','open_pdbs']
-
-    for tag_key in lst_tag_keys:
-
-        tag_val=str(dictDBParams.get( tag_key, not_defined ))
-        matched = fTagSnapshot( myArraySrc, bSourceSnaphotExists, lstSourceVols, caSnapshotName, caSourceProtectionGroup, tag_key, tag_val, False )
-        if (matched==0): matched = fTagSnapshot( myArraySrc, bSourceSnaphotExists, lstSourceVols, caSnapshotName, caSourceProtectionGroup, tag_key, tag_val, True )
+    mTagSnapshot( myArraySrc, bSourceSnapshotExists, lstSourceVols, caSourceProtectionGroup, caSnapshotName, args.execute_lock, False )
 
     #
-    # get any excluded volumes - VVOL config volumes need to be excluded
+    # get any excluded volumes - RAC cluster disks and VVOL config volumes need to be excluded
     #
     print( '============' )
     print( 'excluded volumes' )
-    lstExcludedVols = fa_pg_snap.dictMain.get( "excluded_volumes", [] )
+    lstExcludedVols = fa_pg_snap.dictArgs.get( "excluded_volumes", [] )
     for vol in lstExcludedVols: print ( f'excluding:{vol}' )
 
 
@@ -768,20 +822,25 @@ def doMain( ):
 
 
     #
+    # check if this snapshot is to be replicated
+    #
+    if( args.replicate and not bSourceSnapshotExists ):
+
+        retval = fa_pg_snap.fQuerySnapshotReplication( myArrayTgt, src_array_name, caSourceProtectionGroup, caSnapshotName, 10, 5, args.execute_lock )
+        if( retval==False ):
+            mError( halt, 0, 'snapshot replication did not complete in the time allowed' )
+
+        mTagSnapshot( myArrayTgt, bSourceSnapshotExists, lstSourceVols, caSourceProtectionGroup, caSnapshotName, args.execute_lock, True )
+    
+
+    #
     # process the fa_pg_snap.dictSourceVols and then fetch the matching volume from fa_pg_snap.dictTargetVols
     # THIS IS DESTRUCTIVE!
     #
-    for i in range(20):
+    my_result = fa_pg_snap.fMapVolumes( myArrayTgt, args.execute_lock )
 
-        my_return = fa_pg_snap.fMapVolumes( myArrayTgt, args.execute_lock )
-        if my_return=="": break
-        time.sleep(2)
+    if my_result!="": fa_pg_snap.mQuit()
 
-
-    if my_return!="":
-
-        print( '============' )
-        print( f'ERROR - map did not complete:{my_return}' )
 
     #
     # if safety lock engaged there is nothing more we can do
@@ -795,10 +854,10 @@ def doMain( ):
     # asm rescan / relist
     # asm mount the source asm dg
 
-    if ( fa_pg_snap.dictMain.get( "rescan_scsi_bus", not_defined ) != not_defined ):
+    if ( fa_pg_snap.dictArgs.get( "rescan_scsi_bus", not_defined ) != not_defined ):
 
         print( '============' )
-        os.system( fa_pg_snap.dictMain.get( "rescan_scsi_bus" ))
+        os.system( fa_pg_snap.dictArgs.get( "rescan_scsi_bus" ))
 
 
     #
@@ -860,5 +919,6 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
+
 
 
