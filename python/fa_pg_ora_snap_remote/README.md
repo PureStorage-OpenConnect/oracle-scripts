@@ -8,7 +8,7 @@ If replication is set up for the source protection group, the snapshot can be re
 
 # Requirements:
 
-This Python code imports the [fa_pg_snap.py](../fa_pg_snap/) code.
+This Python code imports the [fa_pg_snap.py](../fa_pg_snap/) code.\
 This Python code imports the [fa_pg_ora_snap.py](../fa_pg_ora_snap/) code.
 
 # Arguments:
