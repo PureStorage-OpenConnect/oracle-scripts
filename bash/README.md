@@ -6,3 +6,5 @@ These require the purevol executable to be installed.
 clonedb.sh - Script to clone single instance Oracle database mounted on filesystems
 
 repSnap.sh - Script to refresh the target protection group with the latest snapshot from the source protection group
+
+cr_udev.sh - Script to quickly generate UDEV rules suitable for Oracle ASM.
