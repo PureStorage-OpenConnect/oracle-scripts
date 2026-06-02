@@ -1,8 +1,13 @@
 {
     "src_flash_array_host": "source_flash_array.localdomain",
     "src_flash_array_api_token": "itsasecret",
+    "flash_array_api_version": "2.29",
+
     "tgt_flash_array_host": "target_flash_array.localdomain",
     "tgt_flash_array_api_token": "itsasecret",
+
+    "replicate": "False",
+
     "_comment": "list of volumes to exclude",
     "excluded_volumes": [
       { "volume_id": "dd246ff7-9104-71cd-0320-8915f47aa77e" },
