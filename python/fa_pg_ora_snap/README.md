@@ -25,13 +25,21 @@ Note - many database parameters must be specified in the JSON file - see below:
 
 # JSON file settings:
 
-* rescan_scsi_bus - how to scan for new ASM disks (two examples are included in the repository)
+* src_flash_array_host - source flash array FQDN
+* src_flash_array_api_token - source flash API token
+* tgt_flash_array_host - target flash array FQDN (if using replication)
+* tgt_flash_array_api_token - target flash API token (if using replication)
+* replicate - True or False - will the snapshot be replicated?
+* src_protection_group - the source protection group to be snapshot
+* tgt_protection_group - the target protection group to sync'd to (optional)
+
+* rescan_scsi_bus - how to scan for new ASM disks (three examples are included in the repository)
 * asm_sid - ASM SID on the target machine
 * asm_home - ASM home on the target machine
 * oracle_sid - Oracle SID of the cloned database (must exist on the target server)
 * oracle_home - Oracle home on the target machine
-* oracle_target_mode - requested state of cloned database (OPEN, DOWN, STARTED or MOUNTED) - overriden by the command line option
-* local_listener - the listener the target database is to register with
+* oracle_target_mode - requested state of cloned database (OPEN, DOWN, MOUNT or NOMOUNT) - overriden by the command line option
+* local_listener - the listener the target database is to register with (optional)
 * db_unique_name - the db_unique_name setting of the cloned database 
 * ora_src_usr - source database user 
 * ora_src_pwd - source database password 
