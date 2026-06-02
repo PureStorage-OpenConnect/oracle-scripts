@@ -1,8 +1,8 @@
 #
 # Python script to snapshot a PG and optionally re-sync to a target PG
 #
-# Graham Thornton - July 2025
-# gthornton@purestorage.com
+# Graham Thornton - May 2026
+# gthornton@everpuredata.com
 #
 # requires py_pure_client
 # requires python -m pip install 'setuptools<72.0.0'
@@ -98,7 +98,8 @@ def fReadConnectionJSON( myfile ):
             data = json.load(file)
             return data
     except FileNotFoundError:
-        print(f'Note: file not found:{myfile}')
+        mQuit( "unable to open file:"+myfile )
+
         return None
     except json.JSONDecodeError:
         print(f'Error: Invalid JSON format in:{myfile}')
@@ -125,13 +126,17 @@ def mWriteConnectionJSON( myfile, mydict ):
 # connect to the flash array
 #
 
-def fFAConnect( my_flash_array, my_flash_array_api_token ):
+def fFAConnect( my_flash_array, my_flash_array_api_token, my_flash_array_api_version ):
 
     print( '============' )
-    print( f'connecting to Flash Array:{my_flash_array}' )
+    print( f'connecting to Flash Array:{my_flash_array} API Version:{my_flash_array_api_version}' )
 
     try:
-        array=flasharray.Client( target=my_flash_array, api_token=my_flash_array_api_token )
+
+        if( my_flash_array_api_version == None ):
+            array=flasharray.Client( target=my_flash_array, api_token=my_flash_array_api_token )
+        else:
+            array=flasharray.Client( target=my_flash_array, api_token=my_flash_array_api_token, version=my_flash_array_api_version )
 
         response = array.get_arrays()
 
@@ -203,7 +208,7 @@ def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_gro
         'replicate-now': my_replicate,
         'for-replication': my_replicate,
         'suffix': my_snapshot_name,
-        'tags': [] 
+        'tags': []
     }
 
     if( my_tags != None ): mydoc['tags'] = my_tags
@@ -226,7 +231,9 @@ def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_gro
         except:
             mError( halt, 0, 'call to post_protection_group_snapshots' )
 
-        if ( response.status_code != 200 ): mError( halt, response.status_code, response.errors[0].message )
+        if ( response.status_code != 200 ):
+            print( response )
+            mError( halt, response.status_code, response.errors[0].message )
 
 
     return my_snapshot_name
@@ -236,10 +243,10 @@ def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_gro
 # return the list of volume names in the protection group
 #
 
-def fQueryVolsinPG( my_array, my_protection_group ):
+def fQueryVolsinPG( my_array, my_protection_group, my_array_name ):
 
     print( '============' )
-    print( f'querying the volumes for protection group:{my_protection_group}' )
+    print( f'querying the volumes for protection group:{my_protection_group} on array {my_array_name}' )
 
     lst_my_vols=[]
 
@@ -304,7 +311,7 @@ def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, ls
 # query the target volumes specified in the given list
 # the list is generated in fQueryVolsinPG and holds the names of the volumes in the target protection group
 # for each volume check the size and if there is a source volume tag
-# updates are written to dictTargetVols 
+# updates are written to dictTargetVols
 #
 
 def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols ):
@@ -466,14 +473,17 @@ def fQuerySnapshotReplication( my_array, my_array_name, my_protection_group, my_
             mError( halt, 0, 'call to get_protection_group_snapshots_transfer failed' )
 
         if ( response.status_code != 200 ): mError( halt, response.status_code, 'call to get_protection_group_snapshots_transfer failed' )
-        data = list(response.items)
-        progress = data[0].progress
+        try:
+            data = list(response.items)
+            progress = data[0].progress
+        except:
+            progress='0'
 
         return progress
 
-    if( my_safe_mode==True): return 
+    if( my_safe_mode==True): return
 
-    # build the name of the target snapshot to look for 
+    # build the name of the target snapshot to look for
     # it will be src_array_name:src_pg:snapname
     my_target = my_array_name+':'+my_protection_group+'.'+my_snapshot_name
 
@@ -485,23 +495,23 @@ def fQuerySnapshotReplication( my_array, my_array_name, my_protection_group, my_
     while( count<my_repeat ):
         count+=1
         progress = fQuerySnapshotReplicationSub( my_array, my_target )
-        if( int(progress)>=1 ): 
+        if( int(progress)>=1 ):
             retval=True
             break
         time.sleep(my_sleep)
 
     return retval
-    
+
 #
 # process the dictSourceVols and then fetch the matching volume from dictTargetVols
 # use the REST API call to sync the target to the source snapshot volume
 # call fMapVolumesSub until it succeeds
-# this is useful for replication scenarios where it might take a few minutes for the 
+# this is useful for replication scenarios where it might take a few minutes for the
 # snapshot to replicate
 #
 
 def fMapVolumes( my_array, my_safe_mode ):
-    
+
     print( '============' )
     print( 'mapping the volumes' )
 
@@ -526,14 +536,13 @@ def fMapVolumes( my_array, my_safe_mode ):
 
             myvol={
                 'source': {'name': src_name },
+                'provisioned': src_size
             }
 
-            if( src_size > tgt_size ):
-                print( 'ERROR: source volume is larger than target volume' )
-                print( f'ERROR: source volume size:{src_size}' )
-                print( f'ERROR: target volume size:{tgt_size}' )
+            if( src_size != tgt_size ):
+                print( f'target volume will be resized from {int(tgt_size)/1073741824} GB to match source source volume size:{int(src_size)/1073741824} GB' )
 
-            elif( my_safe_mode ):
+            if( my_safe_mode ):
 
                 print( 'NOTE: safety lock engaged - disable to sync the target volume' )
 
@@ -615,7 +624,7 @@ def doMain( ):
     parser.add_argument('-i','--ignore_match', action='store_true', help='ignore tag-matching')
     parser.add_argument('-r','--replicate', action='store_true', help='replicate the snapshot')
     parser.add_argument('-o','--output_file', help='output file with names of volumes in the snapshot', required=False)
-    parser.add_argument('-x','--execute_lock', action='store_false', help="specify -x to actually snap the pg (default is safety lock on)") 
+    parser.add_argument('-x','--execute_lock', action='store_false', help="specify -x to actually snap the pg (default is safety lock on)")
 
     args = parser.parse_args()
 
@@ -634,8 +643,9 @@ def doMain( ):
     if( args.config_file != None ): dictArgs = fReadConnectionJSON( args.config_file )
 
     # fa variables for source array
-    src_flash_array = dictArgs.get( "src_flash_array_host", os.environ.get('FA_HOST') )
-    src_flash_array_api_token = dictArgs.get( "src_flash_array_api_token", os.environ.get('API_TOKEN') )
+    src_flash_array = dictArgs.get( "src_flash_array_host", dictArgs.get( "flash_array_host", os.environ.get('FA_HOST')))
+    src_flash_array_api_token = dictArgs.get( "src_flash_array_api_token", dictArgs.get( "flash_array_api_token", os.environ.get('API_TOKEN')))
+    flash_array_api_version = dictArgs.get( "flash_array_api_version" )
 
     if( src_flash_array==None or src_flash_array_api_token==None ):
         mQuit( 'src_flash_array_host and src_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -643,21 +653,26 @@ def doMain( ):
     #
     # connect to the source FA
     #
-    myArraySrc = fFAConnect( src_flash_array, src_flash_array_api_token )
+    myArraySrc = fFAConnect( src_flash_array, src_flash_array_api_token, flash_array_api_version )
     src_array_name = fFAQueryName( myArraySrc )
 
 
     #
     # get the source and optional target protection groups
     #
-    source_protection_group=fNotNone( args.source_protection_group, dictArgs.get( "source_protection_group", not_defined ))
-    target_protection_group=fNotNone( args.target_protection_group, dictArgs.get( "target_protection_group", not_defined ))
+    source_protection_group=fNotNone( args.source_protection_group, dictArgs.get( "source_protection_group", dictArgs.get( "src_protection_group", not_defined )))
+    target_protection_group=fNotNone( args.target_protection_group, dictArgs.get( "target_protection_group", dictArgs.get( "tgt_protection_group", not_defined )))
+    if( source_protection_group==not_defined ): mQuit( 'source protection group is not defined' )
 
+    #
+    # check if we want the snapshot to replicate
+    #
+    bReplicate = ( args.replicate or dictArgs.get( "replicate" )=="True" )
 
     #
     # do we want to replicate this snapshot?
     #
-    if( args.replicate ):
+    if( bReplicate ):
 
         if( source_protection_group==not_defined ): mQuit( 'replicate specified but source protection group is not defined' )
 
@@ -671,25 +686,24 @@ def doMain( ):
         #
         # connect to the target FA
         #
-        myArrayTgt = fFAConnect( tgt_flash_array, tgt_flash_array_api_token )
+        myArrayTgt = fFAConnect( tgt_flash_array, tgt_flash_array_api_token, flash_array_api_version )
         tgt_array_name = fFAQueryName( myArrayTgt )
 
-        
+
         #
         # check the source PG is set for replication
         #
         my_protection_group=[source_protection_group]
-     
+
         response = myArraySrc.get_protection_groups( names=my_protection_group )
-        for item in response.items: 
+        for item in response.items:
             #print ( item.target_count )
             if( item.target_count==0 ): mQuit( 'source protection group is not set for replication' )
-        
+
     else:
 
         myArrayTgt = myArraySrc
         tgt_array_name = src_array_name
-
 
 
     #
@@ -707,22 +721,22 @@ def doMain( ):
     # these are collected in lst_source_vols
     # we verify PG existance before making the snapshot
     #
-    lst_source_vols = fQueryVolsinPG( myArraySrc, source_protection_group )
+    lst_source_vols = fQueryVolsinPG( myArraySrc, source_protection_group, src_array_name )
 
-    if target_protection_group!=not_defined: 
+    if target_protection_group!=not_defined:
 
         #
         # query the volumes of the target pg
         # collect these in lst_target_vols
         #
-        lst_target_vols = fQueryVolsinPG( myArrayTgt, target_protection_group )
+        lst_target_vols = fQueryVolsinPG( myArrayTgt, target_protection_group, tgt_array_name )
 
 
     #
     # if the snapshot does not exist create it
     # if safety lock engaged this will return a null string
     #
-    if( not source_snap_exists ): snapshot_name=fCreateSnapshot( myArraySrc, args.execute_lock, snapshot_name, source_protection_group, args.replicate, None )
+    if( not source_snap_exists ): snapshot_name=fCreateSnapshot( myArraySrc, args.execute_lock, snapshot_name, source_protection_group, bReplicate, None )
 
 
 
@@ -774,7 +788,7 @@ def doMain( ):
     # query the volumes of the target pg
     # collect these in lst_target_vols
     #
-    lst_target_vols = fQueryVolsinPG( myArrayTgt, target_protection_group )
+    lst_target_vols = fQueryVolsinPG( myArrayTgt, target_protection_group, tgt_array_name )
 
 
     #
@@ -796,7 +810,7 @@ def doMain( ):
     #
     # if replication is specified check the snapshot replicated
     #
-    if( args.replicate ):    
+    if( bReplicate ):
         retval = fQuerySnapshotReplication( myArrayTgt, src_array_name, source_protection_group, snapshot_name, 10, 5, args.execute_lock )
         if( retval==False ):
             mError( halt, 0, 'snapshot replication did not complete in the time allowed' )
@@ -816,5 +830,3 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
-
-
