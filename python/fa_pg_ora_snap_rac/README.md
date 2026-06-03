@@ -89,17 +89,17 @@ $[oracle@gct-oradb-demo-tst01 py]$ python fa_pg_ora_snap.rac.py -f json/clone_ra
 ============
 fa_pg_ora_snap.rac.py 1.9.0 started at 2026-06-02 17:03:40.073971
 ============
-connecting to Flash Array:sn1-x90r2-f06-27.puretec.purestorage.com API Version:2.27
+connecting to Flash Array:source_flash_array.localdomain API Version:2.27
 connected
 ============
-connecting to Flash Array:sn1-x90r2-f05-33.puretec.purestorage.com API Version:2.27
+connecting to Flash Array:target_flash_array.localdomain API Version:2.27
 connected
 ============
 determining if snapshot jun021703 exists for protection group:gct-oradb-rac-prd-data-pg
 source protection group:gct-oradb-rac-prd-data-pg
 target protection group:gct-oradb-rac-tst-data-pg
 ============
-connecting to source database:gct-oradb-prd-rac02.localdomain:1521/prdcdb
+connecting to source database:mydatabasehost:1521/prdcdb
 use backup mode:True
 ============
 reading source database settings
@@ -128,7 +128,7 @@ creating snapshot for gct-oradb-rac-prd-data-pg
 ============
 source db end backup mode
 ============
-querying the volumes for protection group:gct-oradb-rac-prd-data-pg on array sn1-x90r2-f06-27
+querying the volumes for protection group:gct-oradb-rac-prd-data-pg on array source_flash_array
 gct-oradb-rac-prd-data00
 gct-oradb-rac-prd-data01
 gct-oradb-rac-prd-data02
@@ -163,14 +163,14 @@ name:sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data
 will use ssh key to connect as grid
 will use ssh key to connect as oracle
 ============
-determining ASM instance on host gct-oradb-tst-rac01.localdomain
+determining ASM instance on host mytstrac01.localdomain
 ASM instance on this host is +ASM1
-checking if target database cdbtst is configured on host gct-oradb-tst-rac01.localdomain
+checking if target database cdbtst is configured on host mytstrac01.localdomain
 checking if target database cdbtst is running on any host
 ============
-checking target ASM diskgroups are unmounted DATA on host gct-oradb-tst-rac01.localdomain
+checking target ASM diskgroups are unmounted DATA on host mytstrac01.localdomain
 ============
-determining ASM instance on host gct-oradb-tst-rac02.localdomain
+determining ASM instance on host mytstrac02.localdomain
 ASM instance on this host is +ASM2
 checking if target database cdbtst is configured on host gct-oradb-tst-rac02.localdomain
 checking if target database cdbtst is running on any host

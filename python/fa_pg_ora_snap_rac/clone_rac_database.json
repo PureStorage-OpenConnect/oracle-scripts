@@ -1,9 +1,9 @@
 {
-    "src_flash_array_host": "src_storage.purestorage.com",
+    "src_flash_array_host": "source_flash_array.localdomain",
     "src_flash_array_api_token": "itsasecret",
     "flash_array_api_version": "2.29",
 
-    "tgt_flash_array_host": "tgt_storage.purestorage.com",
+    "tgt_flash_array_host": "target_flash_array.localdomain",
     "tgt_flash_array_api_token": "itsanothersecret",
 
     "source_protection_group": "gct-oradb-rac-prd-data-pg",
@@ -32,8 +32,8 @@
     "def_cs_asm": "connect / as sysasm",
 
     "tgt_hosts": [
-      { "tgt_host": "gct-oradb-tst-rac01.localdomain" },
-      { "tgt_host": "gct-oradb-tst-rac02.localdomain" }
+      { "tgt_host": "mytstrac01.localdomain" },
+      { "tgt_host": "mytstrac02.localdomain" }
     ],
 
     "tgt_db": "cdbtst",
