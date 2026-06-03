@@ -71,7 +71,7 @@ The code will snapshot that protection group, and then overwrite volumes on the 
 ============
 fa_pg_ora_snap.py 1.9.0 started at 2025-12-05 23:38:03.169537
 ============
-connecting to Flash Array:sn1-x90r2-f06-27.puretec.purestorage.com
+connecting to Flash Array:source_flash_array.localdomain
 connected
 ============
 determining if snapshot dec052338 exists for source pg:gct-oradb-demo-prd01-pg

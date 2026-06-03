@@ -1,9 +1,9 @@
 {
-    "src_flash_array_host": "src_storage.purestorage.com",
+    "src_flash_array_host": "source_flash_array.localdomain",
     "src_flash_array_api_token": "itsasecret",
     "flash_array_api_version": "2.29",
 
-    "tgt_flash_array_host": "tgt_storage.purestorage.com",
+    "tgt_flash_array_host": "target_flash_array.localdomain",
     "tgt_flash_array_api_token": "itsanothersecret",
 
     "replicate": "False",
@@ -13,11 +13,11 @@
     "tgt_protection_group": "gct-oradb-demo-tst01-pg",
 
     "oracle_target_mode": "DOWN",
-    "local_listener": "(ADDRESS=(PROTOCOL=TCP)(HOST=myhost)(PORT=1521))",
+    "local_listener": "(ADDRESS=(PROTOCOL=TCP)(HOST=mytargethost.localdomain)(PORT=1521))",
 
     "ora_src_usr": "sys",
     "ora_src_pwd": "oracle",
-    "ora_src_cs": "srchost:1521/SJC",
+    "ora_src_cs": "mysourcehost.localdomain:1521/SJC",
     "ora_backup_mode": "False",
 
     "def_user_oracle": "oracle",
