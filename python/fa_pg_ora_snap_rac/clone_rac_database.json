@@ -1,30 +1,41 @@
 {
-    "src_flash_array_host": "source_flash_array.localdomain",
-    "src_flash_array_api_token": "itsasecret",
-    "rescan_scsi_bus": "sudo /root/udev/rescan_udev.sh",
-    "src_protection_group": "gct-oradb-rdmudev01-pg",
-    "tgt_protection_group": "gct-oradb-rdmudev02-pg",
+    "src_flash_array_host": "sn1-x90r2-f06-27.puretec.purestorage.com",
+    "src_flash_array_api_token": "c39e3748-5aac-1e08-c388-35f20d9fce08",
+    "tgt_flash_array_host": "sn1-x90r2-f05-33.puretec.purestorage.com",
+    "tgt_flash_array_api_token": "44e2d6d7-ba0c-e4df-0ce1-91cf6cc505a7",
+    "rescan_scsi_bus": "sudo /root/udev/rescan_asmlib.sh",
+    "source_protection_group": "gct-oradb-rac-prd-data-pg",
+    "target_protection_group": "gct-oradb-rac-tst-data-pg",
     "oracle_target_mode": "DOWN",
-    "local_listener": "(ADDRESS=(PROTOCOL=TCP)(HOST=target_host.localdomain)(PORT=1521))",
+
+    "replicate": "True",
+
+    "flash_array_api_version": "2.27",
 
     "ora_src_usr": "sys",
-    "ora_src_pwd": "change_on_install",
-    "ora_src_cs": "gct-oradb-rdmudev01:1521/swingdb",
+    "ora_src_pwd": "oracle",
+    "ora_src_cs": "gct-oradb-prd-rac02.localdomain:1521/prdcdb",
     "ora_backup_mode": "False",
 
     "def_user_oracle": "oracle",
-    "def_passwd_oracle": "itsasecret",
+    "_def_passwd_oracle": "oracle",
     "def_user_grid": "oracle",
-    "def_passwd_grid": "itsasecret",
+    "_def_passwd_grid": "oracle",
     "def_asm": "+ASM",
     "def_port": "22",
     "def_cs_db": "connect / as sysdba",
     "def_cs_asm": "connect / as sysasm",
 
-    "tgt_host": "target_host.localdomain",
-    "tgt_db": "swingdb",
-    "tgt_user_grid": "oracle",
-    "tgt_pass_grid": "itsasecret",
-    "tgt_sid": "swingdev"
+    "tgt_hosts": [
+      { "tgt_host": "gct-oradb-tst-rac01.localdomain" },
+      { "tgt_host": "gct-oradb-tst-rac02.localdomain" }
+    ],
+
+    "tgt_db": "cdbtst",
+    "tgt_user_grid": "grid",
+    "_tgt_pass_grid": "grid",
+    "tgt_key_grid": "/home/oracle/.ssh/id_ed25519",
+    "tgt_key_oracle": "/home/oracle/.ssh/id_ed25519"
 
 }
+
