@@ -172,12 +172,12 @@ checking target ASM diskgroups are unmounted DATA on host mytstrac01.localdomain
 ============
 determining ASM instance on host mytstrac02.localdomain
 ASM instance on this host is +ASM2
-checking if target database cdbtst is configured on host gct-oradb-tst-rac02.localdomain
+checking if target database cdbtst is configured on host mytstrac02.localdomain
 checking if target database cdbtst is running on any host
 ============
-checking target ASM diskgroups are unmounted DATA on host gct-oradb-tst-rac02.localdomain
+checking target ASM diskgroups are unmounted DATA on host mytstrac02.localdomain
 ============
-querying the volumes for protection group:gct-oradb-rac-tst-data-pg on array sn1-x90r2-f05-33
+querying the volumes for protection group:gct-oradb-rac-tst-data-pg on array target_flash_array.localdomain
 gct-oradb-rac-tst-data00
 gct-oradb-rac-tst-data01
 gct-oradb-rac-tst-data02
@@ -228,36 +228,36 @@ sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 wi
 sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 will be syncd to gct-oradb-rac-tst-data01
 sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 will be syncd to gct-oradb-rac-tst-data02
 ============
-rescaning the SCSI bus on target gct-oradb-tst-rac01.localdomain
-rescaning the SCSI bus on target gct-oradb-tst-rac02.localdomain
+rescaning the SCSI bus on target mytstrac01.localdomain
+rescaning the SCSI bus on target mytstrac02.localdomain
 ============
-mounting ASM diskgroups on host gct-oradb-tst-rac01.localdomain using ASM instance +ASM1
-mounting ASM diskgroups on host gct-oradb-tst-rac02.localdomain using ASM instance +ASM2
+mounting ASM diskgroups on host mytstrac01.localdomain using ASM instance +ASM1
+mounting ASM diskgroups on host mytstrac02.localdomain using ASM instance +ASM2
 ============
-checking target ASM diskgroups are mounted DATA on host gct-oradb-tst-rac01.localdomain
-target ASM diskgroup DATA is mounted on node gct-oradb-tst-rac01.localdomain
+checking target ASM diskgroups are mounted DATA on host mytstrac01.localdomain
+target ASM diskgroup DATA is mounted on node mytstrac01.localdomain
 ============
-checking target ASM diskgroups are mounted DATA on host gct-oradb-tst-rac02.localdomain
-target ASM diskgroup DATA is mounted on node gct-oradb-tst-rac02.localdomain
+checking target ASM diskgroups are mounted DATA on mytstrac02.localdomain
+target ASM diskgroup DATA is mounted on node mytstrac02.localdomain
 ============
 requested state of cdbtst is:OPEN
-starting database cdbtst to a NOMOUNT state using host gct-oradb-tst-rac01.localdomain and database instance cdbtst1
+starting database cdbtst to a NOMOUNT state using host mytstrac01.localdomain and database instance cdbtst1
 ============
-resetting the target SPFILE on host gct-oradb-tst-rac01.localdomain using instance cdbtst1
+resetting the target SPFILE on host mytstrac01.localdomain using instance cdbtst1
 alter system set db_name='PRDCDB' sid='*' scope=spfile;
 alter system set control_files='+DATA/PRDCDB/CONTROLFILE/current.308.1233917149','+DATA/PRDCDB/CONTROLFILE/current.307.1233917149' sid='*' scope=spfile;
 alter system set db_recovery_file_dest='+DATA' sid='*' scope=spfile;
 alter system set db_recovery_file_dest_size=13979615232 sid='*' scope=spfile;
 alter system set enable_pluggable_database=TRUE sid='*' scope=spfile;
-shutting down database cdbtst using host gct-oradb-tst-rac01.localdomain and database instance cdbtst1
+shutting down database cdbtst using host mytstrac01.localdomain and database instance cdbtst1
 ============
 restarting target database
-starting database cdbtst to a OPEN state using host gct-oradb-tst-rac01.localdomain and database instance cdbtst1
+starting database cdbtst to a OPEN state using host mytstrac01.localdomain and database instance cdbtst1
 taking target database out of backup mode using instance cdbtst1
 restarting target database with backup mode disabled
 re-opening pluggable databases
 no pluggable databases to re-open
-actual state of cdbtst1 on host gct-oradb-tst-rac01.localdomain is:OPEN
+actual state of cdbtst1 on host mytstrac01.localdomain is:OPEN
 ============
 complete
 

@@ -80,7 +80,7 @@ target protection group:gct-oradb-demo-dev01-pg
 ============
 setting local oracle sid and home
 ============
-connecting to source database:gct-oradb-demo-prd01:1521/SJC
+connecting to source database:myorasourcedb:1521/SJC
 use backup mode:True
 ============
 reading source database settings
