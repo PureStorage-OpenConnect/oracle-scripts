@@ -43,7 +43,7 @@ The JSON file excludes two volumes from the snapshot/sync process.
 ============
 fa_pg_snap.py 1.0.0 started at 2025-12-05 17:07:36.791237
 ============
-connecting to Flash Array:sn1-x90r2-f06-27.puretec.purestorage.com
+connecting to Flash Array:source_flash_array.localdomain
 connected
 ============
 determining if snapshot dec051707 exists for source pg:gct-oradb-demo-prd01-pg
