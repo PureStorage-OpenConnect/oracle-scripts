@@ -584,9 +584,9 @@ def mOraStartPluggableRemote( my_host, my_port, my_user, my_pass, my_key, my_sid
     for open_pdb in open_pdbs.split(','):
 
         print( 'opening '+str(open_pdb))
-        cmd_list.append( "alter pluggable database "+str(open_pdb)+" open;" )
-        cmd_list.append( "alter session set container="+str(open_pdb)+";" )
+        cmd_list.append( "alter pluggable database "+str(open_pdb)+" open instances=all;" )
         if ( local_listener != not_defined ):
+            cmd_list.append( "alter session set container="+str(open_pdb)+";" )
             cmd_list.append( "alter system set local_listener='"+local_listener+"';" )
             cmd_list.append( "alter system register;" )
         cmd_list.append( "connect / as sysdba" )
