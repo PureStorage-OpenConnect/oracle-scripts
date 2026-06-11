@@ -21,9 +21,9 @@
     "ora_backup_mode": "False",
 
     "def_user_oracle": "oracle",
-    "def_passwd_oracle": "oracle",
+    "def_pass_oracle": "oracle",
     "def_user_grid": "oracle",
-    "def_passwd_grid": "oracle",
+    "def_pass_grid": "oracle",
     "def_asm": "+ASM",
     "def_port": "22",
     "def_cs_db": "connect / as sysdba",
