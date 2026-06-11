@@ -1,4 +1,4 @@
-# Python scripts for snapshot and cloning a protection group on a Pure Flash Array
+# Python scripts for snapshot and cloning a protection group on an Everpure Flash Array
 
 The script fa_pg_snap.py provides for taking a snapshot of a protection group on a Pure Flash Array.\
 It will also optionally copy that snapshot to a target protection group.  In this case the target protection group must have an equal or greater number of volumes of equal or larger size than the source.\
