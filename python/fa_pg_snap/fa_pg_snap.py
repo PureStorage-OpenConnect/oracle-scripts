@@ -1,7 +1,7 @@
 #
 # Python script to snapshot a PG and optionally re-sync to a target PG
 #
-# Graham Thornton - May 2026
+# Graham Thornton - June 2026
 # gthornton@everpuredata.com
 #
 # requires py_pure_client
@@ -25,11 +25,13 @@ warnings.filterwarnings(action='ignore')
 from pypureclient import flasharray
 import urllib3
 
+from collections import defaultdict
+from typing import NamedTuple
 
 # global variables
 halt=1
 nohalt=0
-version = "1.0.0"
+version = "1.1.0"
 not_defined = "Not Defined"
 
 # main dictionary for script variables
@@ -200,20 +202,26 @@ def fQuerySnapExists( my_array, my_snapshot_name, my_protection_group ):
 # create the snapshot for the specified pg
 #
 
-def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_group, my_replicate, my_tags ):
+def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_group, my_replicate, my_tag_pairs ):
 
-    mydoc={
-        'eradication_config': {'manual_eradication': 'enabled'},
-        'replicate': my_replicate,
-        'replicate-now': my_replicate,
-        'for-replication': my_replicate,
-        'suffix': my_snapshot_name,
-        'tags': []
-    }
+    # build the tag objects from the (key, value) pairs passed in.
+    # copyable=True is REQUIRED for the tags to travel with the snapshot
+    # when it replicates to the target array.
+    my_tags = [
+        flasharray.Tag(
+            namespace="default",
+            key=str( my_key ),
+            value=str( my_value ),
+            copyable=True,
+        )
+        for my_key, my_value in my_tag_pairs
+    ]
 
-    if( my_tags != None ): mydoc['tags'] = my_tags
+    # tag the snapshot with if it was replicated
+    my_tags.append( flasharray.Tag( namespace="default", key="replicate", value=str(my_replicate), copyable=True ))
 
-#    print( mydoc )
+    #applied = ", ".join( f"{t.namespace} {t.key}={t.value}" for t in my_tags )
+    #print(f"Tags applied: {applied}")
 
     print( '============' )
     print( f'creating snapshot for {my_protection_group}' )
@@ -225,14 +233,24 @@ def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_gro
 
     else:
 
+        snap_body = flasharray.ProtectionGroupSnapshotPost(
+            suffix=my_snapshot_name,
+            tags=my_tags,
+        )
+
+        #print( f'{snap_body}' )
         try:
-            response = my_array.post_protection_group_snapshots( source_names=[my_protection_group], protection_group_snapshot=mydoc )
+            response = my_array.post_protection_group_snapshots( 
+                source_names=[my_protection_group], 
+                replicate=my_replicate,
+                protection_group_snapshot=snap_body,
+            )
 
         except:
             mError( halt, 0, 'call to post_protection_group_snapshots' )
 
-        if ( response.status_code != 200 ):
-            print( response )
+        if ( response.status_code != 200 ): 
+            #print( response )
             mError( halt, response.status_code, response.errors[0].message )
 
 
@@ -311,7 +329,7 @@ def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, ls
 # query the target volumes specified in the given list
 # the list is generated in fQueryVolsinPG and holds the names of the volumes in the target protection group
 # for each volume check the size and if there is a source volume tag
-# updates are written to dictTargetVols
+# updates are written to dictTargetVols 
 #
 
 def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols ):
@@ -481,9 +499,9 @@ def fQuerySnapshotReplication( my_array, my_array_name, my_protection_group, my_
 
         return progress
 
-    if( my_safe_mode==True): return
+    if( my_safe_mode==True): return 
 
-    # build the name of the target snapshot to look for
+    # build the name of the target snapshot to look for 
     # it will be src_array_name:src_pg:snapname
     my_target = my_array_name+':'+my_protection_group+'.'+my_snapshot_name
 
@@ -495,23 +513,23 @@ def fQuerySnapshotReplication( my_array, my_array_name, my_protection_group, my_
     while( count<my_repeat ):
         count+=1
         progress = fQuerySnapshotReplicationSub( my_array, my_target )
-        if( int(progress)>=1 ):
+        if( int(progress)>=1 ): 
             retval=True
             break
         time.sleep(my_sleep)
 
     return retval
-
+    
 #
 # process the dictSourceVols and then fetch the matching volume from dictTargetVols
 # use the REST API call to sync the target to the source snapshot volume
 # call fMapVolumesSub until it succeeds
-# this is useful for replication scenarios where it might take a few minutes for the
+# this is useful for replication scenarios where it might take a few minutes for the 
 # snapshot to replicate
 #
 
 def fMapVolumes( my_array, my_safe_mode ):
-
+    
     print( '============' )
     print( 'mapping the volumes' )
 
@@ -536,7 +554,7 @@ def fMapVolumes( my_array, my_safe_mode ):
 
             myvol={
                 'source': {'name': src_name },
-                'provisioned': src_size
+                'provisioned': src_size 
             }
 
             if( src_size != tgt_size ):
@@ -602,6 +620,99 @@ def mWriteVolumesinSnapshot( output_file, lst_excluded_vols ):
 
     if( len(output_file)>0 ): f.close()
 
+##############################################
+
+# TAG PROCESSING
+
+##############################################
+
+#True if snap_name is the local or a replicated form of my_protection_group.my_suffix.
+
+def fNameMatches(snap_name, my_protection_group, my_suffix):
+
+    target = f"{my_protection_group}.{my_suffix}"
+    return snap_name == target or snap_name.endswith(f":{target}")
+
+
+def fFindMatchingSnapshots(my_array, my_protection_group, my_suffix):
+    """Page through all pg snapshots and return names matching my_protection_group.my_suffix.
+
+    Works for replicated snapshots because matching is done on the snapshot
+    name (which carries the source-array prefix), not on a local my_protection_group object.
+    """
+    lst_matches = []
+    continuation_token = None
+
+    while True:
+
+        response = my_array.get_protection_group_snapshots( continuation_token=continuation_token )
+
+        if response.status_code != 200:
+            mError( halt, 0, f'call to get_protection_group_snapshots failed: {response.errors}' )
+
+        items = list(response.items)
+        for snap in items:
+            if fNameMatches(snap.name, my_protection_group, my_suffix):
+                lst_matches.append(snap.name)
+
+        # Advance pagination, if the SDK surfaced a continuation token.
+        continuation_token = getattr(response, "continuation_token", None)
+        if not continuation_token:
+            break
+
+    return lst_matches
+
+def fResourceNameOf( my_tag ):
+    """Best-effort extraction of the snapshot name a tag belongs to."""
+    resource = getattr(my_tag, "resource", None)
+    if resource is None:
+        return None
+    if isinstance(resource, dict):
+        return resource.get("name")
+    return getattr(resource, "name", None)
+
+class snapshot_tag(NamedTuple):
+    namespace: str 
+    key: str 
+    value: str
+
+# for a given protection group and snapshot name, read the tags and return it as a dictionary
+
+def fQuerySnapshotTags( my_array, my_protection_group, my_snapshot_name ):
+
+    lst_snapshots = fFindMatchingSnapshots( my_array, my_protection_group, my_snapshot_name )
+
+    if not lst_snapshots: mQuit( "snapshot exists but no matching snapshot found" )
+
+    #print( f'{lst_snapshots}' )
+
+    tag_response = my_array.get_protection_group_snapshots_tags( resource_names=lst_snapshots )
+
+    #print( f'{tag_response}' )
+
+    tags_by_snapshot = defaultdict(list)
+
+    for tag in tag_response.items: tags_by_snapshot[fResourceNameOf(tag)].append(tag)
+
+    #print( f'tags by snapshot:{tags_by_snapshot}' )
+
+    lst_return=[]
+    any_tags = False
+    for snap_name in lst_snapshots:
+        snap_tags = tags_by_snapshot.get(snap_name, [])
+        if snap_tags:
+            any_tags = True
+            #print(f"Tags for {snap_name}:")
+            for tag in snap_tags:
+                #print(f"  [{tag.namespace}] {tag.key}={tag.value}")
+                lst_return.append( snapshot_tag( tag.namespace, tag.key, tag.value ))
+
+
+        else:
+            print(f"{snap_name}: not found")
+
+    #print( f'{lst_return}' )
+    return lst_return
 
 ##############################################
 
@@ -624,7 +735,7 @@ def doMain( ):
     parser.add_argument('-i','--ignore_match', action='store_true', help='ignore tag-matching')
     parser.add_argument('-r','--replicate', action='store_true', help='replicate the snapshot')
     parser.add_argument('-o','--output_file', help='output file with names of volumes in the snapshot', required=False)
-    parser.add_argument('-x','--execute_lock', action='store_false', help="specify -x to actually snap the pg (default is safety lock on)")
+    parser.add_argument('-x','--execute_lock', action='store_false', help="specify -x to actually snap the pg (default is safety lock on)") 
 
     args = parser.parse_args()
 
@@ -689,17 +800,17 @@ def doMain( ):
         myArrayTgt = fFAConnect( tgt_flash_array, tgt_flash_array_api_token, flash_array_api_version )
         tgt_array_name = fFAQueryName( myArrayTgt )
 
-
+        
         #
         # check the source PG is set for replication
         #
         my_protection_group=[source_protection_group]
-
+     
         response = myArraySrc.get_protection_groups( names=my_protection_group )
-        for item in response.items:
+        for item in response.items: 
             #print ( item.target_count )
             if( item.target_count==0 ): mQuit( 'source protection group is not set for replication' )
-
+        
     else:
 
         myArrayTgt = myArraySrc
@@ -723,7 +834,7 @@ def doMain( ):
     #
     lst_source_vols = fQueryVolsinPG( myArraySrc, source_protection_group, src_array_name )
 
-    if target_protection_group!=not_defined:
+    if target_protection_group!=not_defined: 
 
         #
         # query the volumes of the target pg
@@ -736,7 +847,31 @@ def doMain( ):
     # if the snapshot does not exist create it
     # if safety lock engaged this will return a null string
     #
-    if( not source_snap_exists ): snapshot_name=fCreateSnapshot( myArraySrc, args.execute_lock, snapshot_name, source_protection_group, bReplicate, None )
+    if( not source_snap_exists ): 
+
+        snapshot_name=fCreateSnapshot( 
+            myArraySrc, 
+            args.execute_lock, 
+            snapshot_name, 
+            source_protection_group, 
+            bReplicate, 
+            [] 
+        )
+
+    else:
+
+        print( '============' )
+        print( 'reading tags from snapshot' )
+
+        lst_tags = fQuerySnapshotTags( myArraySrc, source_protection_group, snapshot_name )
+
+        for tag in lst_tags:
+
+            if( tag.key == "replicate" ):
+                
+                if( bReplicate and str(bReplicate) != tag.value ):
+
+                    mQuit( "existing snapshot was not replicated" )
 
 
 
@@ -810,7 +945,7 @@ def doMain( ):
     #
     # if replication is specified check the snapshot replicated
     #
-    if( bReplicate ):
+    if( bReplicate ):    
         retval = fQuerySnapshotReplication( myArrayTgt, src_array_name, source_protection_group, snapshot_name, 10, 5, args.execute_lock )
         if( retval==False ):
             mError( halt, 0, 'snapshot replication did not complete in the time allowed' )
@@ -830,3 +965,5 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
+
+
