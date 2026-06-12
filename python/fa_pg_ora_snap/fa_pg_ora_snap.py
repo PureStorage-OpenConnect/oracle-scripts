@@ -542,9 +542,10 @@ def doMain( ):
     #
     # get the source and optional target protection groups
     #
-    caSourceProtectionGroup=fa_pg_snap.fNotNone( args.source_protection_group, fa_pg_snap.dictArgs.get ( "source_protection_group", not_defined ))
-    caTargetProtectionGroup=fa_pg_snap.fNotNone( args.target_protection_group, fa_pg_snap.dictArgs.get ( "target_protection_group", not_defined ))
+    caSourceProtectionGroup=fNotNone( args.source_protection_group, dictArgs.get( "source_protection_group", dictArgs.get( "src_protection_group", not_defined )))
+    caTargetProtectionGroup=fNotNone( args.target_protection_group, dictArgs.get( "target_protection_group", dictArgs.get( "tgt_protection_group", not_defined )))
     if( caSourceProtectionGroup==not_defined ): fa_pg_snap.mQuit( 'source protection group is not defined' )
+
 
     #
     # check if we want the snapshot to replicate
