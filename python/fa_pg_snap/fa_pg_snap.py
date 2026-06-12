@@ -747,8 +747,8 @@ def doMain( ):
                     description='snapshot a protection group on an Everpure Flash Array',
                     epilog='coded by Graham Thornton - gthornton@everpuredata.com')
 
-    parser.add_argument('-s','--source_protection_group', help='source pg', required=False)
-    parser.add_argument('-t','--target_protection_group', help='target pg', required=False)
+    parser.add_argument('-s','--caSourceProtectionGroup', help='source pg', required=False)
+    parser.add_argument('-t','--caTargetProtectionGroup', help='target pg', required=False)
     parser.add_argument('-n','--snapshot_name', help='name of the snapshot', required=True)
     parser.add_argument('-f','--config_file', help='json document of config options', required=False)
     parser.add_argument('-i','--ignore_match', action='store_true', help='ignore tag-matching')
@@ -789,9 +789,9 @@ def doMain( ):
     #
     # get the source and optional target protection groups
     #
-    source_protection_group=fNotNone( args.source_protection_group, dictArgs.get( "source_protection_group", dictArgs.get( "src_protection_group", not_defined )))
-    target_protection_group=fNotNone( args.target_protection_group, dictArgs.get( "target_protection_group", dictArgs.get( "tgt_protection_group", not_defined )))
-    if( source_protection_group==not_defined ): mQuit( 'source protection group is not defined' )
+    caSourceProtectionGroup=fNotNone( args.caSourceProtectionGroup, dictArgs.get( "caSourceProtectionGroup", dictArgs.get( "src_protection_group", not_defined )))
+    caTargetProtectionGroup=fNotNone( args.caTargetProtectionGroup, dictArgs.get( "caTargetProtectionGroup", dictArgs.get( "tgt_protection_group", not_defined )))
+    if( caSourceProtectionGroup==not_defined ): mQuit( 'source protection group is not defined' )
 
     #
     # check if we want the snapshot to replicate
@@ -803,7 +803,7 @@ def doMain( ):
     #
     if( bReplicate ):
 
-        if( source_protection_group==not_defined ): mQuit( 'replicate specified but source protection group is not defined' )
+        if( caSourceProtectionGroup==not_defined ): mQuit( 'replicate specified but source protection group is not defined' )
 
         # fa variables for target array
         tgt_flash_array = dictArgs.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
@@ -822,7 +822,7 @@ def doMain( ):
         #
         # check the source PG is set for replication
         #
-        my_protection_group=[source_protection_group]
+        my_protection_group=[caSourceProtectionGroup]
      
         response = myArraySrc.get_protection_groups( names=my_protection_group )
         for item in response.items: 
@@ -838,11 +838,11 @@ def doMain( ):
     #
     # check if the source pg has the requested snapshot
     #
-    source_snap_exists=fQuerySnapExists( myArraySrc, snapshot_name, source_protection_group )
+    source_snap_exists=fQuerySnapExists( myArraySrc, snapshot_name, caSourceProtectionGroup )
 
 
-    print( f'source protection group:{source_protection_group}' )
-    print( f'target protection group:{target_protection_group}' )
+    print( f'source protection group:{caSourceProtectionGroup}' )
+    print( f'target protection group:{caTargetProtectionGroup}' )
 
 
     #
@@ -850,7 +850,7 @@ def doMain( ):
     # these are collected in lst_source_vols
     # we verify PG existance before making the snapshot
     #
-    lst_source_vols = fQueryVolsinPG( myArraySrc, source_protection_group, src_array_name )
+    lst_source_vols = fQueryVolsinPG( myArraySrc, caSourceProtectionGroup, src_array_name )
 
 
     #
@@ -863,7 +863,7 @@ def doMain( ):
             myArraySrc, 
             args.execute_lock, 
             snapshot_name, 
-            source_protection_group, 
+            caSourceProtectionGroup, 
             bReplicate, 
             [] 
         )
@@ -873,7 +873,7 @@ def doMain( ):
         print( '============' )
         print( 'reading tags from snapshot' )
 
-        lst_tags = fQuerySnapshotTags( myArraySrc, source_protection_group, snapshot_name )
+        lst_tags = fQuerySnapshotTags( myArraySrc, caSourceProtectionGroup, snapshot_name )
 
         for tag in lst_tags:
 
@@ -909,7 +909,7 @@ def doMain( ):
     # these are recorded in dictSourceVols( id:target_map|vol_name|size_in_bytes )
     # entries found in the exclude file will be omitted
     #
-    fQueryVolumesinSnapshot( myArrayTgt, source_protection_group, snapshot_name, lst_source_vols, lst_excluded_vols )
+    fQueryVolumesinSnapshot( myArrayTgt, caSourceProtectionGroup, snapshot_name, lst_source_vols, lst_excluded_vols )
 
 
     #
@@ -924,7 +924,7 @@ def doMain( ):
     #
     # if not target PG was define we stop here
     #
-    if target_protection_group==not_defined: mQuit( )
+    if caTargetProtectionGroup==not_defined: mQuit( )
 
 
 
@@ -932,7 +932,7 @@ def doMain( ):
     # query the volumes of the target pg
     # collect these in lst_target_vols
     #
-    lst_target_vols = fQueryVolsinPG( myArrayTgt, target_protection_group, tgt_array_name )
+    lst_target_vols = fQueryVolsinPG( myArrayTgt, caTargetProtectionGroup, tgt_array_name )
 
 
     #
@@ -955,7 +955,7 @@ def doMain( ):
     # if replication is specified check the snapshot replicated
     #
     if( bReplicate ):    
-        retval = fQuerySnapshotReplication( myArrayTgt, src_array_name, source_protection_group, snapshot_name, 10, 5, args.execute_lock )
+        retval = fQuerySnapshotReplication( myArrayTgt, src_array_name, caSourceProtectionGroup, snapshot_name, 10, 5, args.execute_lock )
         if( retval==False ):
             mError( HALT, 0, 'snapshot replication did not complete in the time allowed' )
 
