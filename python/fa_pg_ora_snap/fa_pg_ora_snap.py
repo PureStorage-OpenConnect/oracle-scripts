@@ -1,7 +1,7 @@
 #
 # Python script to snapshot an Oracle database and optionally re-sync to a target PG
 #
-# Graham Thornton - June 2026
+# Graham Thornton - May 2026
 # gthornton@everpuredata.com
 #
 # requires py_pure_client
@@ -13,23 +13,17 @@
 # python fa_pg_ora_snap.py -s gct-oradb-vvol-ac::pgroup-auto -t gct-oradb-vvol-pg-swingtarget -n gct1 -f config.json -x
 #
 
-import sys
-import time
 import os
 import re
 import datetime
-import json
 import argparse
 import oracledb
-import getpass
 
 import warnings
 warnings.filterwarnings(action='ignore')
 
-from pypureclient import flasharray
 import urllib3
 
-from collections import defaultdict
 
 #
 # this script builds upon fa_pg_snap
@@ -37,10 +31,8 @@ from collections import defaultdict
 import fa_pg_snap
 
 # global variables
-halt=1
-nohalt=0
-version = "1.10.0"
-not_defined = "Not Defined"
+from fa_pg_snap import not_defined, HALT, NOHALT 
+version = "1.9.0"
 
 lst_db_parameters = ['control_files','db_recovery_file_dest','db_recovery_file_dest_size','enable_pluggable_database']
 
@@ -136,6 +128,7 @@ def fSQLExecute( myconn, mystmt ):
 def fOraLocalExecute( sid, home, cs, lst_mystmts ):
 
     lst_result=[]
+    lst_format=["set echo off","set term off","set verify off","set pagesize 999","set linesize 300","set feedback off","set trimspool on","set heading off"]
 
     os.environ["ORACLE_SID"]=sid
     os.environ["ORACLE_HOME"]=home
@@ -143,34 +136,52 @@ def fOraLocalExecute( sid, home, cs, lst_mystmts ):
     tmp_output_file = os.getcwd()+"/ora_"+str(os.getpid())+".tmp"
     err_output_file = os.getcwd()+"/ora_"+str(os.getpid())+".err"
 
-    process = os.popen("$ORACLE_HOME/bin/sqlplus -s /nolog >> "+err_output_file+" 2>&1", "w" )
-    process.write( cs+"\n" )
+    try:
+        process = os.popen("$ORACLE_HOME/bin/sqlplus -s /nolog >> "+err_output_file+" 2>&1", "w" )
+        process.write( cs+"\n" )
 
-    lst_format=["set echo off","set term off","set verify off","set pagesize 999","set linesize 300","set feedback off","set trimspool on","set heading off"]
-    for cmd in lst_format:
-        #print( cmd )
+        for cmd in lst_format:
+            #print( cmd )
+            process.write( cmd+"\n" )
+
+        cmd = "spool "+tmp_output_file
         process.write( cmd+"\n" )
 
-    cmd = "spool "+tmp_output_file
-    process.write( cmd+"\n" )
+        for cmd in lst_mystmts:
+            #print( cmd )
+            process.write( cmd+"\n" )
 
-    for cmd in lst_mystmts:
-        #print( cmd )
-        process.write( cmd+"\n" )
+        process.write( "spool off\n" )
+        process.write( "exit\n" )
 
-    process.write( "spool off\n" )
-    process.write( "exit\n" )
-    process.close()
+        rc = process.close() 
 
-    file = open(tmp_output_file, 'r')
-    lines = file.readlines()
-    for line in lines:
-        clean_line = line.strip()
-        if len( clean_line )>0: lst_result.append( line.strip() )
-    file.close()
+        if( rc is not None ):
+            print( f'call to SQL*Plus returned {rc}' ) 
 
-    os.remove( tmp_output_file )
-    os.remove( err_output_file )
+        # read the output file
+        with open(tmp_output_file, 'r') as file:
+            for line in file:
+                clean_line = line.strip()
+                if len( clean_line )>0: lst_result.append( clean_line )
+
+    except Exception as e:
+        print( f'call to SQL*Plus failed: {e}' )
+        print( f'ORACLE_HOME is {home}' )
+        print( f'ORACLE_SID is {sid}' )
+        print( f'connect string is {cs}' )
+
+        # show any diagnostics SQL*Plus wrote to the error file
+        try:
+            with open(err_output_file, 'r') as err_file: print( err_file.read() )
+        except OSError:
+            pass
+
+    finally:
+        # remove the temporary files if they were created
+        # note: no return here - a return in finally would swallow exceptions
+        for tmp_file in ( tmp_output_file, err_output_file ):
+            if os.path.exists( tmp_file ): os.remove( tmp_file )
 
     return lst_result
 
@@ -203,10 +214,10 @@ def fQueryTargetInstanceRunning( ora_sid, ora_home ):
 
     lst_output = fOraLocalExecute( ora_sid, ora_home, "connect / as sysdba", ["select decode(status,'STARTED','NOMOUNT','MOUNTED','MOUNT',status) from v$instance;"] )
 
-    if( "ORA-01034: ORACLE not available" in lst_output ):
-        return( "DOWN" )
+    if not lst_output: return "DOWN"
+    if any( "ORA-01034" in line for line in lst_output ): return "DOWN"
+    return str( lst_output[0] )
 
-    return ( str( lst_output[0] ) )
 
 #
 # mount ASM diskgroups on the target
@@ -224,7 +235,7 @@ def mMountASMDG( asm_sid, asm_home, lst_source_asm_dg ):
             print( "mounting diskgroup "+source_asm_dg )
             lst_commands.append( 'alter diskgroup '+source_asm_dg+' mount;' )
 
-        myres = fOraLocalExecute( asm_sid, asm_home, "connect / as sysasm", lst_commands )
+        fOraLocalExecute( asm_sid, asm_home, "connect / as sysasm", lst_commands )
 
 #
 # start the target instance to the required state
@@ -246,7 +257,7 @@ def mOraStartTarget( ora_sid, ora_home, ora_target_mode, ora_backup_mode ):
 
     #print( cmd_list )
 
-    myres = fOraLocalExecute( ora_sid, ora_home, "connect / as sysdba", cmd_list )
+    fOraLocalExecute( ora_sid, ora_home, "connect / as sysdba", cmd_list )
 
 #
 # open pluggable databases
@@ -280,7 +291,7 @@ def mOraStartPluggable( ora_sid, ora_home, ora_target_mode ):
 
         #print( str(cmd_list))
 
-    myres = fOraLocalExecute( ora_sid, ora_home, "connect / as sysdba", cmd_list )
+    fOraLocalExecute( ora_sid, ora_home, "connect / as sysdba", cmd_list )
 
 #
 # reset the SPFILE of the target database
@@ -293,23 +304,29 @@ def mOraResetTargetSPFILE( ora_sid, ora_home ):
 
     # reset the database name
     value = dictDBParams.get( 'db_name' )
+
+    if( value is None ):
+        fa_pg_snap.mQuit( 'snapshot tag db_name is missing - cannot reset the target SPFILE' )
+
     cmd = "alter system set db_name='"+value+"' sid='*' scope=spfile;"
     cmd_list.append( cmd )
     print( cmd )
 
     for parameter in lst_db_parameters:
 
-        value = dictDBParams.get( parameter )
+        value = dictDBParams.get( parameter, not_defined )
 
-        if( parameter=='control_files' ):
-            value = "'"+re.sub(r", ", "','", value )+"'"
+        if( value != not_defined ):
 
-        if( parameter=='db_recovery_file_dest' ):
-            value = "'"+value+"'"
+            if( parameter=='control_files' ):
+                value = "'"+re.sub(r", ", "','", value )+"'"
 
-        cmd = "alter system set "+parameter+"="+value+" sid='*' scope=spfile;"
-        cmd_list.append( cmd )
-        print( cmd )
+            if( parameter=='db_recovery_file_dest' ):
+                value = "'"+value+"'"
+
+            cmd = "alter system set "+parameter+"="+value+" sid='*' scope=spfile;"
+            cmd_list.append( cmd )
+            print( cmd )
 
     # see if db_unique_name is defined - if so add it to the list of parameters to reset in the target spfile file
     db_unique_name = fa_pg_snap.dictArgs.get( 'db_unique_name', not_defined ) 
@@ -321,7 +338,7 @@ def mOraResetTargetSPFILE( ora_sid, ora_home ):
     # we need to bounce the instance to re-read the spfile
     print( '============' )
     print( 'restarting instance' )
-    cmd_list.append( 'shutdown immediate' );
+    cmd_list.append( 'shutdown immediate' )
 
     fOraLocalExecute( ora_sid, ora_home, "connect / as sysdba", cmd_list )
 
@@ -442,8 +459,8 @@ def fOraSourceConnect( my_source_snapshot_exists, my_backup_mode ):
         #for r in lst_result: print( r )
 
         # if we are a container database....
-        myres = dictDBParams.get( 'enable_pluggable_database', [] )
-        if( str(myres)=='TRUE' ):
+        myres = dictDBParams.get( 'enable_pluggable_database', not_defined )
+        if( str(myres).upper()=='TRUE' ):
 
             # get the open pluggable databases
             print( 'identifying the open pluggable databases' )
@@ -480,13 +497,13 @@ def doMain( ):
     # parse the command line args
     parser = argparse.ArgumentParser(
                     prog='fa_pg_ora_snap ', usage='%(prog)s [-s -t -n -f -i -r -b -o -x -h]',
-                    description='snapshot an oracle database on a Pure Flash Array',
-                    epilog='coded by Graham Thornton - gthornton@purestorage.com')
+                    description='snapshot an oracle database on a Everpure Flash Array',
+                    epilog='coded by Graham Thornton - gthornton@everpuredata.com')
 
     parser.add_argument('-s','--source_protection_group', help='source pg', required=False)
     parser.add_argument('-t','--target_protection_group', help='target pg', required=False)
     parser.add_argument('-n','--snapshot_name', help='name of the snapshot', required=True)
-    parser.add_argument('-o','--open_mode', help='requested state of the target instance (down, started, mounted, open)', required=False)
+    parser.add_argument('-o','--open_mode', help='requested state of the target instance (down, nomount, mount, open)', required=False)
     parser.add_argument('-f','--config_file', help='json document of config options', required=True)
     parser.add_argument('-i','--ignore_match', action='store_true', help='ignore tag-matching')
     parser.add_argument('-r','--replicate', action='store_true', help='replicate the snapshot')
@@ -565,22 +582,29 @@ def doMain( ):
     print( f'target protection group:{caTargetProtectionGroup}' )
 
     #
-    # oracle target/local variables
+    # oracle environmental variables
     #
     ora_sid = fa_pg_snap.dictArgs.get( "oracle_sid", not_defined )
     ora_home = fa_pg_snap.dictArgs.get( "oracle_home", not_defined )
 
+    if( ora_sid == not_defined or ora_home == not_defined ):
+        fa_pg_snap.mQuit( "oracle home and/or sid not set" )
+
+    print( '============' )
+    print( "setting local oracle sid and home" )
+    os.environ["ORACLE_SID"]=ora_sid
+    os.environ["ORACLE_HOME"]=ora_home
+
+
+    #
+    # get oracle target mode
+    #
     ora_target_mode = fa_pg_snap.fNotNone( args.open_mode, fa_pg_snap.dictArgs.get( "oracle_target_mode", "DOWN" ))
     ora_target_mode = ora_target_mode.upper()
 
     if( ora_target_mode not in ['OPEN','MOUNT','NOMOUNT','DOWN']):
         fa_pg_snap.mQuit( "target database state must be one of OPEN, MOUNT, NOMOUNT, DOWN" )
 
-    if( ora_sid != not_defined and ora_home != not_defined ):
-        print( '============' )
-        print( "setting local oracle sid and home" )
-        os.environ["ORACLE_SID"]=ora_sid
-        os.environ["ORACLE_HOME"]=ora_home
 
     #
     # check if we want oracle backup mode used
@@ -706,9 +730,16 @@ def doMain( ):
         print( "determining if target ASM diskgroups are mounted" )
 
         source_asm_dg = dictDBParams.get( "asm_disk_groups", "" )
-        lstMountedDGs = fQueryASMDGMounted( asm_sid, asm_home, source_asm_dg.split(',') )
 
-        if( len( lstMountedDGs )>0 ): fa_pg_snap.mQuit( str( len( lstMountedDGs ))+' ASM diskgroup(s) are still mounted on the target' )
+        if( source_asm_dg in ( "", not_defined ) ):
+
+            print( 'no ASM diskgroups to mount' )
+
+        else:
+
+            lstMountedDGs = fQueryASMDGMounted( asm_sid, asm_home, source_asm_dg.split(',') )
+
+            if( len( lstMountedDGs )>0 ): fa_pg_snap.mQuit( str( len( lstMountedDGs ))+' ASM diskgroup(s) are still mounted on the target' )
 
     #
     # query the volumes of the target pg
@@ -751,16 +782,14 @@ def doMain( ):
 
         retval = fa_pg_snap.fQuerySnapshotReplication( myArrayTgt, src_array_name, caSourceProtectionGroup, caSnapshotName, 10, 5, args.execute_lock )
         if( retval==False ):
-            mError( halt, 0, 'snapshot replication did not complete in the time allowed' )
+            fa_pg_snap.mError( HALT, 0, 'snapshot replication did not complete in the time allowed' )
 
 
     #
     # process the fa_pg_snap.dictSourceVols and then fetch the matching volume from fa_pg_snap.dictTargetVols
     # THIS IS DESTRUCTIVE!
     #
-    my_result = fa_pg_snap.fMapVolumes( myArrayTgt, args.execute_lock )
-
-    if my_result!="": fa_pg_snap.mQuit()
+    fa_pg_snap.mMapVolumes( myArrayTgt, args.execute_lock )
 
 
     #
@@ -792,17 +821,24 @@ def doMain( ):
         print( "mounting ASM diskgroups on target" )
 
         source_asm_dg = dictDBParams.get( "asm_disk_groups", "" )
-        mMountASMDG( asm_sid, asm_home, source_asm_dg.split(',') )
-        lstMountedDGs = fQueryASMDGMounted( asm_sid, asm_home, source_asm_dg.split(',') )
 
-        for dg in source_asm_dg.split(','):
-            if dg not in lstMountedDGs:
-                print( f'ASM diskgroup {dg} has not mounted on target' )
-                nFail+=1
+        if( source_asm_dg in ( "", not_defined ) ):
 
-        if( nFail>0 ): fa_pg_snap.mQuit( 'not all ASM diskgroups came online on the target' )
+            print( 'no ASM diskgroups to mount' )
 
-        print( 'all ASM diskgroups mounted on the target' )
+        else:
+
+            mMountASMDG( asm_sid, asm_home, source_asm_dg.split(',') )
+            lstMountedDGs = fQueryASMDGMounted( asm_sid, asm_home, source_asm_dg.split(',') )
+
+            for dg in source_asm_dg.split(','):
+                if dg not in lstMountedDGs:
+                    print( f'ASM diskgroup {dg} has not mounted on target' )
+                    nFail+=1
+
+            if( nFail>0 ): fa_pg_snap.mQuit( 'not all ASM diskgroups came online on the target' )
+
+            print( 'all ASM diskgroups mounted on the target' )
 
     #
     # start the database
@@ -823,8 +859,8 @@ def doMain( ):
         caTargetOraStatus = fQueryTargetInstanceRunning( ora_sid, ora_home )
 
         # if we are a container database....
-        myres = dictDBParams.get( 'enable_pluggable_database', [] )
-        if( myres=='TRUE' ):
+        myres = dictDBParams.get( 'enable_pluggable_database', not_defined )
+        if( myres.upper()=='TRUE' ):
 
             print( 'opening pluggable databases' )
             mOraStartPluggable( ora_sid, ora_home, ora_target_mode )
@@ -840,6 +876,7 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
+
 
 
 
