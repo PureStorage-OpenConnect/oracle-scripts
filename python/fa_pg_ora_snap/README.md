@@ -1,26 +1,34 @@
-# Python scripts for snapshot and cloning an Oracle database on Pure Flash Array
+# Python scripts for snapshot and cloning an Oracle database on an Everpure Flash Array
 
-The script fa_pg_ora_snap.py provides for taking a snapshot clone of an Oracle database using ASM, with volumes in a protection group on a Pure Flash Array.\
-The code can also clone the source database to a target database server.  The code will check to determine of the target database and ASM diskgroups are offline before execution.  If they are still online, the code will refuse to execute.\
+The script fa_pg_ora_snap.py provides for taking a snapshot clone of an Oracle database using ASM, with volumes in a protection group on an Everpure Flash Array.\
+The code can also clone the source database to a target database server.  The code will check whether the target database and ASM diskgroups are offline before execution.  If they are still online, the code will refuse to execute.\
 It will also optionally copy that snapshot to a target protection group.  In this case the target protection group must have an equal or greater number of volumes of equal or larger size than the source.\
-The script can also copy an existing snapshot of a source protection group to a target protection group.\
+The script can also copy an existing snapshot of a source protection group to a target protection group.  In this case the database settings are read back from the tags on the snapshot.\
 If replication is set up for the source protection group, the snapshot can be replicated to a second Flash Array.
+
+This script must execute on the target database host and does NOT support RAC clustering.
 
 # Requirements:
 
-This Python code imports the [fa_pg_snap.py](../fa_pg_snap/) code.
+- Python 3.8 or later
+- py-pure-client (`python -m pip install py-pure-client`)
+- python-oracledb (`python -m pip install oracledb`)
+- `python -m pip install 'setuptools<72.0.0'`
+- SQL*Plus available at `$ORACLE_HOME/bin/sqlplus` on the target host
+- OS authentication to the local instances - the code connects with `connect / as sysdba` and `connect / as sysasm`
+- This Python code imports the [fa_pg_snap.py](../fa_pg_snap/) code, which must be in the same directory or on the PYTHONPATH.
 
 # Arguments:
 
--s source protection group (required)\
--t target protection group (optional)\
--n the snapshot name.  If this does not exist - it will create it.  If it already exists, it will use the existing snapshot to sync to the target. (required)\
+-s source protection group (required unless `source_protection_group` or `src_protection_group` is set in the JSON config file)\
+-t target protection group (optional - may also be set with `target_protection_group` or `tgt_protection_group` in the JSON config file)\
+-n the snapshot name.  If this does not exist - it will create it.  If it already exists, it will use the existing snapshot to sync to the target, reading the database settings from the snapshot tags. (required)\
 -f JSON file with FQDN and API token to connect to the Flash Arrays (required)\
 -r replicate the snapshot to the targets specified in the source protection group (optional)\
--o startup mode of the target database (OPEN, MOUNTED, STARTED or DOWN)\
--b use oracle backup mode (optional - defaults to no) 
+-o startup mode of the target database (OPEN, MOUNT, NOMOUNT or DOWN - case insensitive, defaults to DOWN)\
+-b use oracle backup mode (optional - defaults to no)\
 -i ignore tag (optional - see below)\
--x execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you would it would do.  This may prove useful to make sure you have all the settings right before you  overwrite a target protection group.\
+-x execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you what it would do.  This may prove useful to make sure you have all the settings right before you overwrite a target protection group.\
 Note - many database parameters must be specified in the JSON file - see below:
 
 # JSON file settings:
@@ -29,27 +37,30 @@ Note - many database parameters must be specified in the JSON file - see below:
 * src_flash_array_api_token - source flash API token
 * tgt_flash_array_host - target flash array FQDN (if using replication)
 * tgt_flash_array_api_token - target flash API token (if using replication)
-* replicate - True or False - will the snapshot be replicated?
-* src_protection_group - the source protection group to be snapshot
-* tgt_protection_group - the target protection group to sync'd to (optional)
+* flash_array_api_version - optional REST API version; auto-negotiated when omitted
+* replicate - "True" to replicate the snapshot (the -r flag also enables this)
+* source_protection_group (or src_protection_group) - the source protection group to be snapshot
+* target_protection_group (or tgt_protection_group) - the target protection group to be sync'd to (optional)
+* excluded_volumes - list of source volume IDs to exclude from the sync (optional)
 
 * rescan_scsi_bus - how to scan for new ASM disks (three examples are included in the repository)
-* asm_sid - ASM SID on the target machine
+* asm_sid - ASM SID on the target machine (optional - ASM checks and mounts are skipped if asm_sid/asm_home are not set)
 * asm_home - ASM home on the target machine
-* oracle_sid - Oracle SID of the cloned database (must exist on the target server)
-* oracle_home - Oracle home on the target machine
-* oracle_target_mode - requested state of cloned database (OPEN, DOWN, MOUNT or NOMOUNT) - overriden by the command line option
+* oracle_sid - Oracle SID of the cloned database (required - must exist on the target server)
+* oracle_home - Oracle home on the target machine (required)
+* oracle_target_mode - requested state of cloned database (OPEN, MOUNT, NOMOUNT or DOWN) - overridden by the -o command line option
 * local_listener - the listener the target database is to register with (optional)
-* db_unique_name - the db_unique_name setting of the cloned database 
-* ora_src_usr - source database user 
-* ora_src_pwd - source database password 
+* db_unique_name - the db_unique_name setting of the cloned database (optional)
+* ora_src_usr - source database user (optional - see Notes)
+* ora_src_pwd - source database password
 * ora_src_cs - source database connection string
-* ora_backup_mode - whether to use Oracle backup mode - overriden by command line option
-    
+* ora_backup_mode - "True" to use Oracle backup mode (the -b flag also enables this)
+
 # Notes:
 
 When fully cloning a database from source to target, the code must execute on the target database server as a privileged user able to mount ASM diskgroups and start the target database.  This code assumes that the ASM Grid Infrastructure is owned by the same oracle user as the database.\
-This code required password-less sudo privileges to execute the rescan_afd.sh script.\
+This code requires password-less sudo privileges to execute the rescan_afd.sh script.\
+If ora_src_usr, ora_src_pwd and ora_src_cs are not all specified, the source database is not queried; database settings will only be available when syncing from an existing snapshot that carries them as tags.\
 If replication is not specified, both the source and target protection groups are assumed to be on the source Flash Array, and the target Flash Array is ignored.\
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST and API_TOKEN for authentication to the source Flash Array.\
 If the JSON file does not specify authentication credentials, the code will try to read the OS variables FA_HOST_TGT and API_TOKEN_TGT for authentication to the target Flash Array.
@@ -58,40 +69,48 @@ If the JSON file does not specify authentication credentials, the code will try 
 
 The python code adds numerous tags to the database snapshot.  This allows the DBA to recover the database from the snapshot at a later time when, perhaps, the source database is no longer available to inspect.\
 The tags include the database time the snapshot was made, which allows the use of the "recover database snapshot time" syntax.\
-Tags also include the database ID, database name, if the database was in backup mode or not, and the location of the database controlfiles.
+Tags also include the database ID, database name, if the database was in backup mode or not, the location of the database controlfiles, the ASM diskgroups in use, and any open pluggable databases.\
+A replicate tag records whether the snapshot was created with replication; if -r is used against an existing snapshot, this tag is checked and the script stops if the snapshot was not replicated when it was created.\
+When an existing snapshot is used, these tags are read back and used to reset the SPFILE of the cloned database.
 
 # A Worked Example
 
-In the example below, the database SWINGPRD running on a different Linux server has its ASM diskgroups in a Pure Flash Array protection group called gct-oradb-demo-prd01-pg\
-The code will snapshot that protection group, and then overwrite volumes on the local Linux server, where Oracle is also installed.  The code will then start the cloned ASM diskgroups, mount the cloned database and open it read-write.
+In the example below, the database SWINGPRD running on a different Linux server has its ASM diskgroups in an Everpure Flash Array protection group called gct-oradb-demo-prd01-pg\
+The code will snapshot that protection group, and then overwrite volumes on the local Linux server, where Oracle is also installed.  The code will then start the cloned ASM diskgroups, mount the cloned database and open it read-write.\
+(Output captured with an earlier version - message formatting differs slightly in the current version.)
 
 
 ```
-[oracle@gct-oradb-demo-dev01 py]$ python fa_pg_ora_snap.py -f ora_prd01_2_dev01.json -n dec052338 -b -o open -x
+[oracle@gct-oradb-demo-tst01 py]$ python fa_pg_ora_snap.py -f json/prd01_2_tst01.local.json -n jun121237 -x -o open -b -r
 ============
-fa_pg_ora_snap.py 1.9.0 started at 2025-12-05 23:38:03.169537
+fa_pg_ora_snap.py 1.9.0 started at 2026-06-12 12:37:15.474470
 ============
-connecting to Flash Array:source_flash_array.localdomain
+connecting to Flash Array:sn1-x90r2-f05-27.puretec.purestorage.com API Version:2.44
 connected
 ============
-determining if snapshot dec052338 exists for source pg:gct-oradb-demo-prd01-pg
+connecting to Flash Array:sn1-x90r2-f05-33.puretec.purestorage.com API Version:2.44
+connected
+============
+determining if snapshot jun121237 exists for protection group:gct-oradb-demo-prd01-pg
 source protection group:gct-oradb-demo-prd01-pg
-target protection group:gct-oradb-demo-dev01-pg
+target protection group:gct-oradb-demo-tst01-pg
 ============
 setting local oracle sid and home
 ============
-connecting to source database:myorasourcedb:1521/SJC
+connecting to source database:gct-oradb-demo-prd01:1521/SJC
 use backup mode:True
 ============
 reading source database settings
+asm diskgroups: DATA,FRA
 database name: SWINGDB
 database id: 4017528888
-database time: 2025/12/05 23:38:03
-database unique name: SJC
+database time: 2026/06/12 12:37:16
+database open mode: READ WRITE
 database role: PRIMARY
+database threads: 1
+encrypted tablespaces: 0
 archivelog mode: ARCHIVELOG
 flashback mode: NO
-encrypted tablespaces: 0
 platform name: Linux x86 64-bit
 version: Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production,Version 19.22.0.0.0
 control_files: +DATA/SWINGDB/CONTROLFILE/current.266.1201708985, +FRA/SJC/CONTROLFILE/current.256.1218830433
@@ -105,88 +124,103 @@ creating snapshot for gct-oradb-demo-prd01-pg
 ============
 source db end backup mode
 ============
-querying the volumes for protection group:gct-oradb-demo-prd01-pg
+querying the volumes for protection group:gct-oradb-demo-prd01-pg on array sn1-x90r2-f05-27
 gct-oradb-demo-prd01-data-00
 gct-oradb-demo-prd01-data-01
 gct-oradb-demo-prd01-fra-00
 gct-oradb-demo-prd01-fra-01
 ============
-tagging the snapshot: key:db_name val:SWINGDB
-tagging the snapshot: key:db_id val:4017528888
-tagging the snapshot: key:db_time val:2025/12/05 23:38:03
-tagging the snapshot: key:db_unique_name val:SJC
-tagging the snapshot: key:db_role val:PRIMARY
-tagging the snapshot: key:archivelog_mode val:ARCHIVELOG
-tagging the snapshot: key:flashback_mode val:NO
-tagging the snapshot: key:platform_name val:Linux x86 64-bit
-tagging the snapshot: key:encrypted_tablespaces val:0
-tagging the snapshot: key:version val:Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production,Version 19.22.0.0.0
-tagging the snapshot: key:backup_mode val:Yes
-tagging the snapshot: key:control_files val:+DATA/SWINGDB/CONTROLFILE/current.266.1201708985, +FRA/SJC/CONTROLFILE/current.256.1218830433
-tagging the snapshot: key:db_recovery_file_dest val:+FRA
-tagging the snapshot: key:db_recovery_file_dest_size val:34359738368
-tagging the snapshot: key:enable_pluggable_database val:FALSE
-tagging the snapshot: key:asm_disk_group val:DATA,FRA
-============
 excluded volumes
 ============
-listing the volumes for snapshot:dec052338
-name:gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-00 size:120.0 GB
-name:gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-01 size:120.0 GB
-name:gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-00 size:40.0 GB
-name:gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-01 size:40.0 GB
+listing the volumes for snapshot:jun121237
+name:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00 sz:150.0 GB
+name:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01 sz:150.0 GB
+name:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00 sz:40.0 GB
+name:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01 sz:40.0 GB
 ============
-determining if target instance swingdev is running
+determining if target instance swingtst is running
 target instance is not running
 ============
 determining if target ASM diskgroups are mounted
 ASM diskgroup DATA is not mounted on target
 ASM diskgroup FRA is not mounted on target
 ============
-querying the volumes for protection group:gct-oradb-demo-dev01-pg
-gct-oradb-demo-dev01-data-00
-gct-oradb-demo-dev01-data-01
-gct-oradb-demo-dev01-fra-00
-gct-oradb-demo-dev01-fra-01
+querying the volumes for protection group:gct-oradb-demo-tst01-pg on array sn1-x90r2-f05-33
+gct-oradb-demo-tst01-data-00
+gct-oradb-demo-tst01-data-01
+gct-oradb-demo-tst01-fra-00
+gct-oradb-demo-tst01-fra-01
 ============
 querying target volume details
-name:gct-oradb-demo-dev01-data-00 id:a67641ac-9a36-c375-baf1-298c8a98ffe5 size:120.0
-   is a target for gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-00 size:120.0 GB
-name:gct-oradb-demo-dev01-data-01 id:ee320b80-0bec-5a70-5032-87565859e10f size:120.0
-   is a target for gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-01 size:120.0 GB
-name:gct-oradb-demo-dev01-fra-00 id:173bdf4e-5d71-c89d-8e00-9746337999da size:40.0
-   is a target for gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-00 size:40.0 GB
-name:gct-oradb-demo-dev01-fra-01 id:d2680577-4c5f-f094-0a92-98f01e85c7a8 size:40.0
-   is a target for gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-01 size:40.0 GB
+nm:gct-oradb-demo-tst01-data-00
+  id:dd1b6dc5-78f1-a03c-dd4e-1f606a196909
+  is a target for sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
+  sz:150.0 GB
+nm:gct-oradb-demo-tst01-data-01
+  id:69fdd003-bf27-3768-3a0c-d1a0d10022c1
+  is a target for sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
+  sz:150.0 GB
+nm:gct-oradb-demo-tst01-fra-00
+  id:71c8587f-0250-659e-5ace-07d2cbea11e5
+  is a target for sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
+  sz:40.0 GB
+nm:gct-oradb-demo-tst01-fra-01
+  id:68bff308-f1c6-a2ba-31f6-8bdbd574000d
+  is a target for sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
+  sz:40.0 GB
 ============
 determining volume mapping
-nm:gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-00 src id:a5abc4c3-f199-c026-7c97-a2468e4b5fda map:0 sz:120.0
+nm:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
+  src id:eb6d1f1d-ffe9-2845-46fc-af9a65c36166 map:0
+  sz:150.0 GB
   checking for tag matched volume
-    volume gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-00 will be synced to gct-oradb-demo-dev01-data-00
-nm:gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-01 src id:6c2937de-c30e-dde0-9613-fb15a06966b3 map:0 sz:120.0
+  will be synced to gct-oradb-demo-tst01-data-00
+nm:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
+  src id:ee8c5202-be2e-90d3-aa4f-dd4d56a05dfd map:0
+  sz:150.0 GB
   checking for tag matched volume
-    volume gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-01 will be synced to gct-oradb-demo-dev01-data-01
-nm:gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-00 src id:cbda1d30-1313-4b3e-df61-f1fa35957ac3 map:0 sz:40.0
+  will be synced to gct-oradb-demo-tst01-data-01
+nm:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
+  src id:e7d2d644-2b34-b551-5cc1-de87f8824525 map:0
+  sz:40.0 GB
   checking for tag matched volume
-    volume gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-00 will be synced to gct-oradb-demo-dev01-fra-00
-nm:gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-01 src id:feabf082-e2ce-aaa5-b1ea-8adfd586a7c4 map:0 sz:40.0
+  will be synced to gct-oradb-demo-tst01-fra-00
+nm:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
+  src id:3cd04a42-8511-b8cb-61e3-4284e417b1c3 map:0
+  sz:40.0 GB
   checking for tag matched volume
-    volume gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-01 will be synced to gct-oradb-demo-dev01-fra-01
+  will be synced to gct-oradb-demo-tst01-fra-01
+============
+waiting on snapshot replication
+...
+replication complete
 ============
 mapping the volumes
-gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-00 will be syncd to gct-oradb-demo-dev01-data-00
-gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-data-01 will be syncd to gct-oradb-demo-dev01-data-01
-gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-00 will be syncd to gct-oradb-demo-dev01-fra-00
-gct-oradb-demo-prd01-pg.dec052338.gct-oradb-demo-prd01-fra-01 will be syncd to gct-oradb-demo-dev01-fra-01
+sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
+  src key:eb6d1f1d-ffe9-2845-46fc-af9a65c36166
+  map:dd1b6dc5-78f1-a03c-dd4e-1f606a196909
+  will be syncd to gct-oradb-demo-tst01-data-00
+sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
+  src key:ee8c5202-be2e-90d3-aa4f-dd4d56a05dfd
+  map:69fdd003-bf27-3768-3a0c-d1a0d10022c1
+  will be syncd to gct-oradb-demo-tst01-data-01
+sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
+  src key:e7d2d644-2b34-b551-5cc1-de87f8824525
+  map:71c8587f-0250-659e-5ace-07d2cbea11e5
+  will be syncd to gct-oradb-demo-tst01-fra-00
+sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
+  src key:3cd04a42-8511-b8cb-61e3-4284e417b1c3
+  map:68bff308-f1c6-a2ba-31f6-8bdbd574000d
+  will be syncd to gct-oradb-demo-tst01-fra-01
 ============
 The Oracle base has been set to /u01/app/oracle
 --------------------------------------------------------------------------------
 Label                     Filtering   Path
 ================================================================================
-DATA00                     DISABLED   /dev/sde
-DATA01                     DISABLED   /dev/sdf
-FRA00                      DISABLED   /dev/sdb
-FRA01                      DISABLED   /dev/sdd
+DATA00                     DISABLED   /dev/sdb
+DATA01                     DISABLED   /dev/sdd
+FRA00                      DISABLED   /dev/sde
+FRA01                      DISABLED   /dev/sdf
 GRID1                      DISABLED   /dev/sdc
 ============
 mounting ASM diskgroups on target
@@ -196,15 +230,18 @@ ASM diskgroup DATA is mounted on the target
 ASM diskgroup FRA is mounted on the target
 all ASM diskgroups mounted on the target
 ============
-requested state of swingdev is:OPEN
+requested state of swingtst is:OPEN
 resetting the target SPFILE
 alter system set db_name='SWINGDB' sid='*' scope=spfile;
 alter system set control_files='+DATA/SWINGDB/CONTROLFILE/current.266.1201708985','+FRA/SJC/CONTROLFILE/current.256.1218830433' sid='*' scope=spfile;
 alter system set db_recovery_file_dest='+FRA' sid='*' scope=spfile;
 alter system set db_recovery_file_dest_size=34359738368 sid='*' scope=spfile;
 alter system set enable_pluggable_database=FALSE sid='*' scope=spfile;
-alter system set db_unique_name=swingdev sid='*' scope=spfile;
-actual state of swingdev is:OPEN
+alter system set db_unique_name=swingtst sid='*' scope=spfile;
+============
+restarting instance
+actual state of swingtst is:OPEN
 ============
 complete
+
 ```
