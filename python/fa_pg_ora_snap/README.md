@@ -85,10 +85,10 @@ The code will snapshot that protection group, and then overwrite volumes on the 
 ============
 fa_pg_ora_snap.py 1.9.0 started at 2026-06-12 12:37:15.474470
 ============
-connecting to Flash Array:sn1-x90r2-f05-27.puretec.purestorage.com API Version:2.44
+connecting to Flash Array:source_flash_array.localdomain API Version:2.44
 connected
 ============
-connecting to Flash Array:sn1-x90r2-f05-33.puretec.purestorage.com API Version:2.44
+connecting to Flash Array:target_flash_array.localdomain API Version:2.44
 connected
 ============
 determining if snapshot jun121237 exists for protection group:gct-oradb-demo-prd01-pg
@@ -124,7 +124,7 @@ creating snapshot for gct-oradb-demo-prd01-pg
 ============
 source db end backup mode
 ============
-querying the volumes for protection group:gct-oradb-demo-prd01-pg on array sn1-x90r2-f05-27
+querying the volumes for protection group:gct-oradb-demo-prd01-pg on array source_flash_array
 gct-oradb-demo-prd01-data-00
 gct-oradb-demo-prd01-data-01
 gct-oradb-demo-prd01-fra-00
@@ -133,10 +133,10 @@ gct-oradb-demo-prd01-fra-01
 excluded volumes
 ============
 listing the volumes for snapshot:jun121237
-name:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00 sz:150.0 GB
-name:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01 sz:150.0 GB
-name:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00 sz:40.0 GB
-name:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01 sz:40.0 GB
+name:source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00 sz:150.0 GB
+name:source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01 sz:150.0 GB
+name:source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00 sz:40.0 GB
+name:source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01 sz:40.0 GB
 ============
 determining if target instance swingtst is running
 target instance is not running
@@ -145,7 +145,7 @@ determining if target ASM diskgroups are mounted
 ASM diskgroup DATA is not mounted on target
 ASM diskgroup FRA is not mounted on target
 ============
-querying the volumes for protection group:gct-oradb-demo-tst01-pg on array sn1-x90r2-f05-33
+querying the volumes for protection group:gct-oradb-demo-tst01-pg on array target_flash_array
 gct-oradb-demo-tst01-data-00
 gct-oradb-demo-tst01-data-01
 gct-oradb-demo-tst01-fra-00
@@ -154,38 +154,38 @@ gct-oradb-demo-tst01-fra-01
 querying target volume details
 nm:gct-oradb-demo-tst01-data-00
   id:dd1b6dc5-78f1-a03c-dd4e-1f606a196909
-  is a target for sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
+  is a target for source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
   sz:150.0 GB
 nm:gct-oradb-demo-tst01-data-01
   id:69fdd003-bf27-3768-3a0c-d1a0d10022c1
-  is a target for sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
+  is a target for source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
   sz:150.0 GB
 nm:gct-oradb-demo-tst01-fra-00
   id:71c8587f-0250-659e-5ace-07d2cbea11e5
-  is a target for sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
+  is a target for source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
   sz:40.0 GB
 nm:gct-oradb-demo-tst01-fra-01
   id:68bff308-f1c6-a2ba-31f6-8bdbd574000d
-  is a target for sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
+  is a target for source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
   sz:40.0 GB
 ============
 determining volume mapping
-nm:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
+nm:source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
   src id:eb6d1f1d-ffe9-2845-46fc-af9a65c36166 map:0
   sz:150.0 GB
   checking for tag matched volume
   will be synced to gct-oradb-demo-tst01-data-00
-nm:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
+nm:source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
   src id:ee8c5202-be2e-90d3-aa4f-dd4d56a05dfd map:0
   sz:150.0 GB
   checking for tag matched volume
   will be synced to gct-oradb-demo-tst01-data-01
-nm:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
+nm:source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
   src id:e7d2d644-2b34-b551-5cc1-de87f8824525 map:0
   sz:40.0 GB
   checking for tag matched volume
   will be synced to gct-oradb-demo-tst01-fra-00
-nm:sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
+nm:source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
   src id:3cd04a42-8511-b8cb-61e3-4284e417b1c3 map:0
   sz:40.0 GB
   checking for tag matched volume
@@ -196,19 +196,19 @@ waiting on snapshot replication
 replication complete
 ============
 mapping the volumes
-sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
+source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-00
   src key:eb6d1f1d-ffe9-2845-46fc-af9a65c36166
   map:dd1b6dc5-78f1-a03c-dd4e-1f606a196909
   will be syncd to gct-oradb-demo-tst01-data-00
-sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
+source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-data-01
   src key:ee8c5202-be2e-90d3-aa4f-dd4d56a05dfd
   map:69fdd003-bf27-3768-3a0c-d1a0d10022c1
   will be syncd to gct-oradb-demo-tst01-data-01
-sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
+source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-00
   src key:e7d2d644-2b34-b551-5cc1-de87f8824525
   map:71c8587f-0250-659e-5ace-07d2cbea11e5
   will be syncd to gct-oradb-demo-tst01-fra-00
-sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
+source_flash_array:gct-oradb-demo-prd01-pg.jun121237.gct-oradb-demo-prd01-fra-01
   src key:3cd04a42-8511-b8cb-61e3-4284e417b1c3
   map:68bff308-f1c6-a2ba-31f6-8bdbd574000d
   will be syncd to gct-oradb-demo-tst01-fra-01
