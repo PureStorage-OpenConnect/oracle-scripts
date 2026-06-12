@@ -2,7 +2,7 @@
 # Python script to snapshot multiple Oracle databases and optionally re-sync to a target PG
 # this version runs on a remote host using ssh access to the source and target
 #
-# Graham Thornton - June 2026
+# Graham Thornton - Jun 2026
 # gthornton@everpuredata.com
 #
 # from_private_key function copied from web - author unknown
@@ -17,15 +17,11 @@
 # python fa_pg_ora_snap.rac.py -s gct-oradb-vvol-ac::pgroup-auto -t gct-oradb-vvol-pg-swingtarget -n gct1 -f config.json -x
 #
 
-import sys
 import os
 import re
 import datetime
 import time
-import json
 import argparse
-import oracledb
-import getpass
 import paramiko
 
 # added for from_private_key function
@@ -37,46 +33,27 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, dsa, rsa, ec
 import warnings
 warnings.filterwarnings(action='ignore')
 
-from pypureclient import flasharray
 import urllib3
 
 #
-# this script builds upon fa_pg_snap
+# this script builds upon fa_pg_snap and fa_pg_ora_snap
 #
 import fa_pg_snap
 import fa_pg_ora_snap
 
-# global variables
-halt=1
-nohalt=0
-version = "1.10.0"
-not_defined = "Not Defined"
+# global variables - shared constants come from fa_pg_snap so there is one source of truth
+from fa_pg_snap import not_defined, HALT, NOHALT
+version = "1.9.0"
 
 # disable the HTTPS warnings
 urllib3.disable_warnings()
 
+# debug level - set with the -d command line option
 gnDebug=0
-
-fa_pg_snap.dictArgs = {}
 
 
 def mDebug( my_debug, my_msg ):
     if( gnDebug>=my_debug ): print( f'{my_msg}' )
-
-
-#
-# take a list and return it as a single string formatted as a CSV
-#
-def fList2CSV( my_list ):
-
-    result=""
-    sep=""
-
-    for entry in my_list:
-        result=result+sep+entry.strip()
-        sep=","
-
-    return result
 
 ##############################################
 
@@ -86,18 +63,19 @@ def fList2CSV( my_list ):
 
 def from_private_key(file_name, password=None) -> PKey:
 
-    # open the key file
-    #file_obj = open(file_name, "r", encoding="utf-8") as file:
-    file_obj = open(file_name, "r", encoding="utf-8")
+    # read the key file once - the file handle is closed by the with block
+    with open(file_name, "r", encoding="utf-8") as key_file:
+        file_bytes = bytes(key_file.read(), "utf-8")
+
+    # paramiko's from_private_key loaders need a file-like object
+    file_obj = StringIO(file_bytes.decode("utf-8"))
 
     private_key = None
-    file_bytes = bytes(file_obj.read(), "utf-8")
     try:
         key = crypto_serialization.load_ssh_private_key(
             file_bytes,
             password=password,
         )
-        file_obj.seek(0)
     except ValueError:
         key = crypto_serialization.load_pem_private_key(
             file_bytes,
@@ -125,7 +103,7 @@ def from_private_key(file_name, password=None) -> PKey:
     elif isinstance(key, dsa.DSAPrivateKey):
         private_key = DSSKey.from_private_key(file_obj, password)
     else:
-        raise TypeError
+        raise TypeError( f'unsupported private key type: {type(key).__name__}' )
     return private_key
 
 #
@@ -156,9 +134,10 @@ def fRemoteOSShell( my_host, my_port, my_user, my_pass, my_key ):
 
         return shell
 
-    except:
+    except Exception as e:
 
-        return null
+        print( f'fRemoteOSShell failed for {my_user}@{my_host}: {e}' )
+        return None
 
 #
 # execute the commands in the list my_commands against the remote host
@@ -187,10 +166,21 @@ def fRemoteOSExecute( my_host, my_port, my_user, my_pass, my_key, my_commands ):
 
            # print( my_command )
             stdin, stdout, stderr=ssh.exec_command( my_command )
-            stdin.write( my_pass+'\n' )
-            stdin.flush( )
+
+            # some commands (e.g. sudo) may prompt for a password on stdin
+            # only supply it when a real password was provided
+            if( my_pass is not None and my_pass != not_defined ):
+                try:
+                    stdin.write( my_pass+'\n' )
+                    stdin.flush( )
+                except OSError:
+                    pass
 
             for out in stdout.readlines(): lst_return.append( out.strip() )
+
+            # surface anything written to stderr at debug level
+            for err in stderr.readlines():
+                if err.strip(): mDebug( 1, f'stderr:{err.strip()}' )
 
         ssh.close()
 
@@ -211,18 +201,19 @@ def fRemoteOSExecute( my_host, my_port, my_user, my_pass, my_key, my_commands ):
 
 #
 # pass commands to the already established remote shell
-# filter the responses is my_filter is not null
-# return results as a string
+# filter the responses if my_filter is not null
+# return results as a list
 #
-def fRemoteOSExecuteShell( my_shell, my_commands, my_filter="", my_wait=0.5 ):
-
-    #get_join = lambda my_string: "" if len(my_string)==0 else "\n"
-
-    # clear anything already in the return buffer
-    while my_shell.recv_ready(): my_shell.recv(65535).decode()
+# output is drained until it has been quiet for my_wait seconds
+# (up to my_timeout seconds per command) so that slow SQL such as
+# 'alter database end backup' is not cut off by a fixed sleep
+#
+def fRemoteOSExecuteShell( my_shell, my_commands, my_filter="", my_wait=0.5, my_timeout=60 ):
 
     lst_return=[]
-    #my_output = ""
+
+    # clear anything already in the return buffer
+    while my_shell.recv_ready(): my_shell.recv(65535)
 
     try:
 
@@ -230,28 +221,38 @@ def fRemoteOSExecuteShell( my_shell, my_commands, my_filter="", my_wait=0.5 ):
 
             # execute the command
             my_shell.send(my_command + "\n")
-            time.sleep(my_wait)
+
+            # drain the output until it goes quiet (or we time out)
+            my_buffer=""
+            deadline = time.time() + my_timeout
+            last_data = time.time()
+
+            while time.time() < deadline:
+
+                if my_shell.recv_ready():
+                    my_buffer += my_shell.recv(65535).decode()
+                    last_data = time.time()
+
+                elif time.time() - last_data >= my_wait:
+                    break
+
+                else:
+                    time.sleep(0.05)
 
             # process the result
-            while my_shell.recv_ready():
-                myout=my_shell.recv(65535).decode()
-                lst_out = myout.splitlines()
+            for out in my_buffer.splitlines():
 
-                for out in lst_out:
+                out = out.strip()
+                if len(out)==0: continue
 
-                    match=False
-                    if len(my_filter)==0: match = True
-                    if len(my_filter)>0: match = re.search(my_filter,out)
+                if len(my_filter)==0 or re.search(my_filter, out):
+                    #print( f'out:*{out}* {len(out)}' )
+                    lst_return.append( out )
 
-                    if match:
-                        #print( f'out:*{out}* {len(out)}' )
-                        #my_output += get_join(my_output)+out.strip()
-                        lst_return.append( out.strip() )
+    except Exception as e:
+        print( f'fRemoteOSExecuteShell failed: {e}' )
+        return []
 
-    except:
-        return ["fRemoteOSExecuteShell failed"]
-
-    #return my_output
     return lst_return
 
 
@@ -267,13 +268,15 @@ def mRemoteCopyFile( my_host, my_port, my_user, my_pass, my_key, my_local_file, 
 
         if( my_key != not_defined ):
 
-            ssh.connect( my_host, port=my_port, username=my_user, password=my_pass )
-
-        else:
-
+            # a key file was provided - use key authentication
             #ssh_key=paramiko.RSAKey.from_private_key_file( my_key )
             ssh_key=from_private_key( my_key )
             ssh.connect( my_host, port=my_port, username=my_user, pkey=ssh_key )
+
+        else:
+
+            # no key file - fall back to password authentication
+            ssh.connect( my_host, port=my_port, username=my_user, password=my_pass )
 
         sftp_client = ssh.open_sftp()
 
@@ -321,6 +324,10 @@ def fRemoteSQLExecute( my_host, my_port, my_user, my_pass, my_key, my_sid, my_cs
     # open a shell on the remote host
     my_shell=fRemoteOSShell( my_host, my_port, my_user, my_pass, my_key )
 
+    if( my_shell is None ):
+        fa_pg_snap.mError( HALT, 0, f'unable to open a remote shell on {my_host} as {my_user}' )
+        return []
+
     # now execute the commands 
     result_set=fRemoteOSExecuteShell( my_shell, lst_commands, my_filter, 0.5 )
 
@@ -362,7 +369,7 @@ def fRemoteSQLExecuteFile( my_host, my_port, my_user, my_pass, my_key, my_sid, m
 ##############################################
 
 #
-# startup the database on the remote node
+# mount the ASM diskgroups on the remote node
 #
 def fASMMountRemote( my_host, my_port, my_user, my_pass, my_key, my_sid, my_asm_diskgroups ):
 
@@ -372,13 +379,55 @@ def fASMMountRemote( my_host, my_port, my_user, my_pass, my_key, my_sid, my_asm_
 
 
 #
+# return the source ASM diskgroups (read from the snapshot tags) as a clean list
+# returns an empty list when no diskgroups were captured
+#
+def fSourceASMDiskgroups( ):
+
+    src_asm_diskgroups = fa_pg_ora_snap.dictDBParams.get( "asm_disk_groups", "" )
+
+    if( src_asm_diskgroups in ( "", not_defined ) or src_asm_diskgroups is None ): return []
+
+    return [ dg.strip() for dg in src_asm_diskgroups.split(',') if dg.strip() ]
+
+
+#
+# query the remote host for mounted ASM diskgroups and return the subset
+# that appears in lst_src_asm_diskgroups, as a list of (diskgroup, node) tuples
+#
+def fQueryMountedSourceDGs( my_host, my_port, my_user, my_pass, my_key, my_asm_instance, lst_src_asm_diskgroups ):
+
+    lst_mounted=[]
+
+    lst_commands=[ "export ORAENV_ASK=NO; export ORACLE_SID="+my_asm_instance+"; . oraenv; asmcmd lsdg --suppressheader -g | grep 'MOUNTED' | awk -F' ' '{print $NF\",is mounted on node,\"$1}'" ]
+    lst_return=fRemoteOSExecute( my_host, my_port, my_user, my_pass, my_key, lst_commands )
+
+    # did we get any mounted diskgroups?
+    for myreturn in lst_return:
+
+        if ( "is mounted on node" in myreturn ):
+
+            # each mounted diskgroup is a DG,message,NODE tuple
+            lst_parts = myreturn.split(',')
+            if( len( lst_parts )<3 ): continue
+
+            myasmdg = lst_parts[0].rstrip("/")
+            mynode  = lst_parts[2].strip()
+
+            if( myasmdg in lst_src_asm_diskgroups ):
+                lst_mounted.append( ( myasmdg, mynode ) )
+
+    return lst_mounted
+
+
+#
 # for a given host determine the ASM instance
 #
 def fQueryASMInstance( my_host, my_port, my_user, my_pass, my_key ):
 
     asm_instance=not_defined
 
-    mDebug( 1, f'fQueryASMInstance host:{my_host} user:{my_user} pass:{my_pass}' )
+    mDebug( 1, f'fQueryASMInstance host:{my_host} user:{my_user}' )
 
     # is Oracle ASM installed?
     lst_commands=["ps -ef | grep -E '[a]sm_pmon_' | awk -F'_' '{print $NF}'"]
@@ -414,7 +463,11 @@ def fQueryDBInstance( my_host, my_port, my_user, my_pass, my_key, my_db, my_asm 
 
             if ( lst_my_instance_and_host[0]=="instance" and lst_my_instance_and_host[2]=="host" ):
 
-                if ( lst_my_instance_and_host[3].strip() in my_host ): db_instance=lst_my_instance_and_host[1]
+                # compare short hostnames exactly - a substring test would let
+                # node1 incorrectly match node10
+                my_result_node = lst_my_instance_and_host[3].strip()
+                if ( my_result_node == my_host or my_result_node == my_host.split('.')[0] ):
+                    db_instance=lst_my_instance_and_host[1]
 
     # catch a no instance condition - probably single instance
     if( db_instance == not_defined ):
@@ -435,9 +488,10 @@ def fQueryDBInstance( my_host, my_port, my_user, my_pass, my_key, my_db, my_asm 
 
 #
 # start the target database to the required state
+# returns the database instance found on this host (f prefix - returns a value)
 #
 
-def mOraStartTargetRemote ( my_host, my_port, my_user, my_pass, my_key, my_db, my_cs, ora_target_mode, ora_backup_mode ):
+def fOraStartTargetRemote ( my_host, my_port, my_user, my_pass, my_key, my_db, my_cs, ora_target_mode, ora_backup_mode ):
 
     db_instance=not_defined
     open_hot_backup=False
@@ -448,8 +502,6 @@ def mOraStartTargetRemote ( my_host, my_port, my_user, my_pass, my_key, my_db, m
     if ( ora_target_mode not in ['OPEN','MOUNT','NOMOUNT'] ): 
         print( f'target database state must be one of OPEN, MOUNT, NOMOUNT, DOWN' )
         return not_defined
-
-    sql_cmd_list=[];
 
     # which ASM instance is on this host?
     #print( f'host:{my_host} user:{my_user} pass:{my_pass} key:{my_key}' )
@@ -484,7 +536,7 @@ def mOraStartTargetRemote ( my_host, my_port, my_user, my_pass, my_key, my_db, m
         #print( f'host:{my_host} user:{my_user} pass:{my_pass} cs:{my_cs}' )
 
         result = fRemoteSQLExecute( my_host, my_port, my_user, my_pass, my_key, db_instance, my_cs, "", ["alter database end backup;"] )
-        mDebug( 2, f'mOraStartTargetRemote: {result}' )
+        mDebug( 2, f'fOraStartTargetRemote: {result}' )
 
     if ora_backup_mode and open_hot_backup:
 
@@ -503,9 +555,10 @@ def mOraStartTargetRemote ( my_host, my_port, my_user, my_pass, my_key, my_db, m
 #
 # shut the database down
 # used to stop the target database (all instances) so that the spfile is re-read
+# returns the database instance found on this host (f prefix - returns a value)
 #
 
-def mOraStopTargetRemote ( my_host, my_port, my_user, my_pass, my_key, my_db ):
+def fOraStopTargetRemote ( my_host, my_port, my_user, my_pass, my_key, my_db ):
 
     db_instance=not_defined
 
@@ -533,25 +586,32 @@ def mOraResetTargetSPFILERemote( my_host, my_port, my_user, my_pass, my_key, my_
 
     cmd_list = []
 
-    # reset the database name
+    # reset the database name - this tag is mandatory
     value = fa_pg_ora_snap.dictDBParams.get( 'db_name' )
+
+    if( value is None ):
+        fa_pg_snap.mQuit( 'snapshot tag db_name is missing - cannot reset the target SPFILE' )
+
     cmd = "alter system set db_name='"+value+"' sid='*' scope=spfile;"
     cmd_list.append( cmd )
     print( cmd )
 
     for parameter in fa_pg_ora_snap.lst_db_parameters:
 
-        value = fa_pg_ora_snap.dictDBParams.get( parameter )
+        value = fa_pg_ora_snap.dictDBParams.get( parameter, not_defined )
 
-        if( parameter=='control_files' ):
-            value = "'"+re.sub(r", ", "','", value )+"'"
+        # skip parameters that were not captured as tags
+        if( value != not_defined ):
 
-        if( parameter=='db_recovery_file_dest' ):
-            value = "'"+value+"'"
+            if( parameter=='control_files' ):
+                value = "'"+re.sub(r", ", "','", value )+"'"
 
-        cmd = "alter system set "+parameter+"="+value+" sid='*' scope=spfile;"
-        cmd_list.append( cmd )
-        print( cmd )
+            if( parameter=='db_recovery_file_dest' ):
+                value = "'"+value+"'"
+
+            cmd = "alter system set "+parameter+"="+value+" sid='*' scope=spfile;"
+            cmd_list.append( cmd )
+            print( cmd )
 
     # see if db_unique_name is defined - if so add it to the list of parameters to reset in the target spfile file
     db_unique_name = fa_pg_snap.dictArgs.get( 'db_unique_name', not_defined )
@@ -610,8 +670,8 @@ def doMain( ):
     # parse the command line args
     parser = argparse.ArgumentParser(
                     prog='fa_pg_ora_snap.rac ', usage='%(prog)s [-s -t -n -f -i -r -b -o -x -h]',
-                    description='snapshot a protection group of an oracle database on a Pure Flash Array',
-                    epilog='coded by Graham Thornton - gthornton@purestorage.com')
+                    description='snapshot a protection group of an oracle database on an Everpure Flash Array',
+                    epilog='coded by Graham Thornton - gthornton@everpuredata.com')
 
     parser.add_argument('-s','--source_protection_group', help='source pg', required=False)
     parser.add_argument('-t','--target_protection_group', help='target pg', required=False)
@@ -620,10 +680,15 @@ def doMain( ):
     parser.add_argument('-i','--ignore_match', action='store_true', help='ignore tag-matching')
     parser.add_argument('-r','--replicate', action='store_true', help='replicate snapshot')
     parser.add_argument('-b','--backup_mode', action='store_true', help='put source database into backup mode')
-    parser.add_argument('-o','--open_mode', help='requested state of the target instance (down, started, mounted, open)', required=False)
+    parser.add_argument('-o','--open_mode', help='requested state of the target instance', choices=['down','nomount','mount','open'], type=str.lower, required=False)
+    parser.add_argument('-d','--debug', type=int, default=0, help='debug level (0-4)')
     parser.add_argument('-x','--execute_lock', action='store_false', help="specify -x to actually snap the database (default is safety lock on)")
 
     args = parser.parse_args()
+
+    # set the debug level for mDebug
+    global gnDebug
+    gnDebug = args.debug
 
 
     print( '============' )
@@ -635,14 +700,14 @@ def doMain( ):
     #
     # read the config file
     #
-    if( args.config_file != None ): fa_pg_snap.dictArgs = fa_pg_snap.fReadConnectionJSON( args.config_file )
+    if( args.config_file is not None ): fa_pg_snap.dictArgs = fa_pg_snap.fReadConnectionJSON( args.config_file )
 
     # fa variables for source array
     src_flash_array = fa_pg_snap.dictArgs.get( "src_flash_array_host", fa_pg_snap.dictArgs.get( "flash_array_host", os.environ.get('FA_HOST')))
     src_flash_array_api_token = fa_pg_snap.dictArgs.get( "src_flash_array_api_token", fa_pg_snap.dictArgs.get( "flash_array_api_token", os.environ.get('API_TOKEN')))
     flash_array_api_version = fa_pg_snap.dictArgs.get( "flash_array_api_version" )
 
-    if( src_flash_array==None or src_flash_array_api_token==None ):
+    if( src_flash_array is None or src_flash_array_api_token is None ):
         fa_pg_snap.mQuit( 'src_flash_array_host and src_flash_array_api_token need to be defined in the config file or environment variables' )
 
     #
@@ -654,9 +719,6 @@ def doMain( ):
 
 
     #
-    # get the source and optional target protection groups
-    #
-        #
     # get the source and optional target protection groups
     #
     caSourceProtectionGroup=fa_pg_snap.fNotNone( args.source_protection_group, fa_pg_snap.dictArgs.get( "source_protection_group", fa_pg_snap.dictArgs.get( "src_protection_group", not_defined )))
@@ -677,7 +739,7 @@ def doMain( ):
         tgt_flash_array = fa_pg_snap.dictArgs.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
         tgt_flash_array_api_token = fa_pg_snap.dictArgs.get( "tgt_flash_array_api_token", os.environ.get('API_TOKEN_TGT') )
 
-        if( tgt_flash_array==None or tgt_flash_array_api_token==None ):
+        if( tgt_flash_array is None or tgt_flash_array_api_token is None ):
             fa_pg_snap.mQuit( 'tgt_flash_array_host and tgt_flash_array_api_token need to be defined in the config file or environment variables' )
 
         #
@@ -704,6 +766,10 @@ def doMain( ):
 
     ora_target_mode = fa_pg_snap.fNotNone( args.open_mode, fa_pg_snap.dictArgs.get( "oracle_target_mode", "DOWN" ))
     ora_target_mode = ora_target_mode.upper()
+
+    # the CLI value is validated by argparse choices - this catches a bad config file value
+    if( ora_target_mode not in ['OPEN','MOUNT','NOMOUNT','DOWN']):
+        fa_pg_snap.mQuit( "target database state must be one of OPEN, MOUNT, NOMOUNT, DOWN" )
 
 
     #
@@ -736,11 +802,15 @@ def doMain( ):
 
         lst_tags = fa_pg_snap.fQuerySnapshotTags( myArraySrc, caSourceProtectionGroup, caSnapshotName )
 
+        bReplicateTagFound = False
+
         for tag in lst_tags:
 
             print( f'{tag.key} {tag.value}' )
 
             if( tag.key == "replicate" ):
+
+                bReplicateTagFound = True
 
                 if( bReplicate and str(bReplicate) != tag.value ):
 
@@ -749,6 +819,10 @@ def doMain( ):
             else:
                 #print( f'{tag} {tag.namespace} {tag.key} {tag.value}' )
                 fa_pg_ora_snap.dictDBParams.update({ tag.key:tag.value })
+
+        # an older snapshot may carry no replicate tag - we cannot verify it
+        if( bReplicate and not bReplicateTagFound ):
+            fa_pg_snap.mError( NOHALT, 0, 'existing snapshot has no replicate tag - cannot verify it was replicated' )
 
 
     #
@@ -806,23 +880,24 @@ def doMain( ):
     tgt_pass_grid   = fa_pg_snap.dictArgs.get( "tgt_pass_grid",   fa_pg_snap.dictArgs.get( "def_pass_grid", tgt_pass_oracle ))
     tgt_key_grid    = fa_pg_snap.dictArgs.get( "tgt_key_grid",    not_defined )
 
-    tgt_db          = fa_pg_snap.dictArgs.get( "tgt_db" )
+    tgt_db          = fa_pg_snap.dictArgs.get( "tgt_db",          not_defined )
     tgt_cs_db       = fa_pg_snap.dictArgs.get( "tgt_cs_db",       fa_pg_snap.dictArgs.get( "def_cs_db", "connect / as sysdba" ))
-    tgt_asm         = fa_pg_snap.dictArgs.get( "tgt_asm",         fa_pg_snap.dictArgs.get( "def_asm", "+ASM" ))
-    tgt_cs_asm      = fa_pg_snap.dictArgs.get( "tgt_cs_asm",      fa_pg_snap.dictArgs.get( "def_cs_asm", "connect / as sysasm" ))
 
-
-    #
-    # is the target database configured on the target host
-    # 
+    # the source ASM diskgroups read from the snapshot tags, as a clean list
+    lstSourceASMDGs = fSourceASMDiskgroups( )
 
     #
     # check target database and instances are down, and that the target ASM diskgroups are unmounted
     #
-    lst_tgt_hosts = fa_pg_snap.dictArgs.get( "tgt_hosts", [] ) 
 
-    # sanity check - do I have passwords and/or keys to connect?
+    # sanity check - do I have everything needed to connect and verify?
     if( len( lst_tgt_hosts )>0 ):
+
+        if( tgt_db == not_defined ):
+            fa_pg_snap.mQuit( 'tgt_db must be defined in the config file when target hosts are specified' )
+
+        if( len( lstSourceASMDGs )==0 ):
+            fa_pg_snap.mQuit( 'no source ASM diskgroups found in the snapshot tags - cannot verify or mount target diskgroups' )
 
         msg_credentials=""
 
@@ -833,7 +908,7 @@ def doMain( ):
         if( tgt_key_grid == not_defined and tgt_pass_grid == not_defined ): msg_credentials="no password or key provided for grid user"
 
         # we have no credentials for oracle
-        if( tgt_key_grid == not_defined and tgt_pass_grid == not_defined ): msg_credentials+=(", " if len(msg_credentials)>0 else "" )+"no password or key provided for oracle user"
+        if( tgt_key_oracle == not_defined and tgt_pass_oracle == not_defined ): msg_credentials+=(", " if len(msg_credentials)>0 else "" )+"no password or key provided for oracle user"
 
         print( '============' )
         if( msg_credentials != "" ): fa_pg_snap.mQuit( msg_credentials )
@@ -842,6 +917,8 @@ def doMain( ):
         if( tgt_key_oracle != not_defined ): print( f'will use ssh key to connect as oracle' )
         if( tgt_key_oracle == not_defined ): print( f'will use password to connect as oracle' )
 
+
+    nMounted=0
 
     for tgt_host_next in lst_tgt_hosts: 
 
@@ -853,76 +930,52 @@ def doMain( ):
   
         # is Oracle ASM installed?
         asm_instance = fQueryASMInstance( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid )
-        if ( asm_instance == not_defined ): fa_pg_snap.mError( halt, 0, 'ASM not installed or running on host '+tgt_host )
+        if ( asm_instance == not_defined ): fa_pg_snap.mError( HALT, 0, 'ASM not installed or running on host '+tgt_host )
         print( f'ASM instance on this host is {asm_instance}' )
 
-        # is the target database is configured
+        # is the target database configured?
         print( f'checking if target database {tgt_db} is configured on host {tgt_host}' )
 
-        my_status = 'target database is not configured'
-        lst_commands=[]
-        lst_commands.append( "export ORAENV_ASK=NO; export ORACLE_SID="+asm_instance+"; . oraenv; srvctl config | grep "+tgt_db )
+        bConfigured = False
+        lst_commands=[ "export ORAENV_ASK=NO; export ORACLE_SID="+asm_instance+"; . oraenv; srvctl config | grep "+tgt_db ]
         lst_return=fRemoteOSExecute( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid, lst_commands )
 
         for myreturn in lst_return:
-            if( tgt_db == myreturn.strip() ): my_status = 'target database is configured'
+            if( tgt_db == myreturn.strip() ): bConfigured = True
 
         # the specified node does not know of the target database
-        if( my_status == 'target database is not configured' ): fa_pg_snap.mError( halt, 0, my_status+' on host '+tgt_host )
-
-        # is the target database is configured
-        print( f'checking if target database {tgt_db} is running on any host' )
+        if( not bConfigured ): fa_pg_snap.mError( HALT, 0, 'target database is not configured on host '+tgt_host )
 
         # is the target database running on any node?
-        my_status = 'no instances of the database are running'
-        lst_commands=[]
-        lst_commands.append( "export ORAENV_ASK=NO; export ORACLE_SID="+asm_instance+"; . oraenv; srvctl status database -database "+tgt_db )
+        print( f'checking if target database {tgt_db} is running on any host' )
+
+        bRunning = False
+        lst_commands=[ "export ORAENV_ASK=NO; export ORACLE_SID="+asm_instance+"; . oraenv; srvctl status database -database "+tgt_db ]
         lst_return=fRemoteOSExecute( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid, lst_commands )
 
         # did Oracle say any instances of this database are running?
         for myreturn in lst_return:
             if ( "is running on node" in myreturn.strip()):
-                my_status = 'database '+tgt_db+' is still running'
+                bRunning = True
                 print( f'{myreturn.strip()}' )
 
         # the target database is still running
-        if( my_status != 'no instances of the database are running' ): fa_pg_snap.mError( halt, 0, my_status )
-
+        if( bRunning ): fa_pg_snap.mError( HALT, 0, 'database '+tgt_db+' is still running' )
 
         #
         # check if target asm diskgroups are unmounted
         #
         print( '============' )
-        src_asm_diskgroups = fa_pg_ora_snap.dictDBParams.get( "asm_disk_groups" )
-        lst_src_asm_diskgroups = src_asm_diskgroups.split(',')
-        mounted=0
-        print( f'checking target ASM diskgroups are unmounted {src_asm_diskgroups} on host {tgt_host}' )
+        print( f'checking target ASM diskgroups are unmounted {",".join(lstSourceASMDGs)} on host {tgt_host}' )
 
-        lst_commands=[]
-        lst_commands.append( "export ORAENV_ASK=NO; export ORACLE_SID="+asm_instance+"; . oraenv; asmcmd lsdg --suppressheader -g | grep 'MOUNTED' | awk -F' ' '{print $NF\",is mounted on node,\"$1}'" )
-        lst_return=fRemoteOSExecute( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid, lst_commands )
+        # an ASM diskgroup used by the source database mounted on a target node blocks the sync
+        for myasmdg, mynode in fQueryMountedSourceDGs( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid, asm_instance, lstSourceASMDGs ):
 
-        # did we get any mounted diskgroups?
-        for myreturn in lst_return:
+            print( f'target ASM diskgroup {myasmdg} is still mounted on node {mynode}' )
+            nMounted+=1
 
-            if ( "is mounted on node" in myreturn.strip()):
-
-                #print( f'{myreturn.strip()}' )
-
-                # each mounted diskgroup is a DG,NODE tuple
-                myasmdg=myreturn.split(',')[0]
-                myasmdg=myasmdg.rstrip("/")
-
-                mynode=myreturn.split(',')[2]
-                mynode=mynode.strip()
-
-                # an ASM diskgroup used by the source database is mounted on one of the target nodes
-                if( myasmdg in lst_src_asm_diskgroups ): 
-                    print( f'target ASM diskgroup {myasmdg} is still mounted on node {mynode}' )
-                    mounted+=1
-
-    # if we have target hosts, the mounted variable should be zero
-    if( len( lst_tgt_hosts )>0 and mounted>0 ): fa_pg_snap.mError( halt, 0, 'target ASM diskgroups still mounted' ) 
+    # if we have target hosts, the mounted count should be zero
+    if( nMounted>0 ): fa_pg_snap.mError( HALT, 0, 'target ASM diskgroups still mounted' ) 
 
 
 
@@ -966,18 +1019,17 @@ def doMain( ):
     if( bReplicate and not bSourceSnapshotExists ):
 
         retval = fa_pg_snap.fQuerySnapshotReplication( myArrayTgt, src_array_name, caSourceProtectionGroup, caSnapshotName, 10, 5, args.execute_lock )
-        if( retval==False ):
-            mError( halt, 0, 'snapshot replication did not complete in the time allowed' )
+        if( not retval ):
+            fa_pg_snap.mError( HALT, 0, 'snapshot replication did not complete in the time allowed' )
 
 
 
     #
     # process the fa_pg_snap.dictSourceVols and then fetch the matching volume from fa_pg_snap.dictTargetVols
     # THIS IS DESTRUCTIVE!
+    # any API failure inside mMapVolumes halts the program
     #
-    my_result = fa_pg_snap.fMapVolumes( myArrayTgt, args.execute_lock )
-
-    if my_result!="": fa_pg_snap.mQuit()
+    fa_pg_snap.mMapVolumes( myArrayTgt, args.execute_lock )
 
 
     #
@@ -1024,21 +1076,16 @@ def doMain( ):
 
         # query the asm instance for this host
         asm_instance = fQueryASMInstance( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid )
-        if ( asm_instance == not_defined ): fa_pg_snap.mError( halt, 0, 'ASM not installed or running on host '+tgt_host )
+        if ( asm_instance == not_defined ): fa_pg_snap.mError( HALT, 0, 'ASM not installed or running on host '+tgt_host )
         print( f'mounting ASM diskgroups on host {tgt_host} using ASM instance {asm_instance}' )
 
-        # get the list of ASM diskgroups
-        src_asm_diskgroups = fa_pg_ora_snap.dictDBParams.get( "asm_disk_groups" )
-
         # mount the ASM diskgroups on the target host
-        lst_commands=[]
-        lst_commands=["export ORAENV_ASK=NO; export ORACLE_SID="+asm_instance+"; . oraenv; asmcmd mount "+src_asm_diskgroups]
-        fRemoteOSExecute( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid, lst_commands )
+        fASMMountRemote( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid, asm_instance, ",".join( lstSourceASMDGs ) )
 
 
 
     # verify the ASM diskgroups mounted on the target hosts
-    mounted=0
+    nFail=0
     for tgt_host_next in lst_tgt_hosts:
 
         print( '============' )
@@ -1046,49 +1093,24 @@ def doMain( ):
         # get the next target rac host
         tgt_host = tgt_host_next["tgt_host"]
 
-        # get the list of ASM diskgroups (e.g. DATA,FRA )
-        src_asm_diskgroups = fa_pg_ora_snap.dictDBParams.get( "asm_disk_groups" )
-        lst_src_asm_diskgroups = src_asm_diskgroups.split(',')
-
         # query the asm instance for this host
         asm_instance = fQueryASMInstance( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid )
-        if ( asm_instance == not_defined ): fa_pg_snap.mError( halt, 0, 'ASM not installed or running on host '+tgt_host )
-        print( f'checking target ASM diskgroups are mounted {src_asm_diskgroups} on host {tgt_host}' )
+        if ( asm_instance == not_defined ): fa_pg_snap.mError( HALT, 0, 'ASM not installed or running on host '+tgt_host )
+        print( f'checking target ASM diskgroups are mounted {",".join(lstSourceASMDGs)} on host {tgt_host}' )
 
-        # check ASM for what is mounted
-        lst_commands=[]
-        lst_commands.append( "export ORAENV_ASK=NO; export ORACLE_SID="+asm_instance+"; . oraenv; asmcmd lsdg --suppressheader -g | grep 'MOUNTED' | awk -F' ' '{print $NF\",is mounted on node,\"$1}'" )
-        lst_return=fRemoteOSExecute( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid, lst_commands )        
+        # every source diskgroup should now report as mounted on this host
+        lstStillMissing = list( lstSourceASMDGs )
 
-        # did we get any mounted diskgroups?
-        for myreturn in lst_return:
+        for myasmdg, mynode in fQueryMountedSourceDGs( tgt_host, tgt_port, tgt_user_grid, tgt_pass_grid, tgt_key_grid, asm_instance, lstSourceASMDGs ):
 
-            if ( "is mounted on node" in myreturn.strip()):        
+            print( f'target ASM diskgroup {myasmdg} is mounted on node {mynode}' )
+            if( myasmdg in lstStillMissing ): lstStillMissing.remove( myasmdg )
 
-                #print( f'{myreturn.strip()}' )
+        if( len( lstStillMissing )>0 ):
+            nFail+=len( lstStillMissing )
+            print( f'ASM diskgroups {", ".join( lstStillMissing )} did not mount on node {tgt_host}' )
 
-                # each mounted diskgroup is a DG,NODE tuple
-                myasmdg=myreturn.split(',')[0]
-                myasmdg=myasmdg.rstrip("/")
-
-                mynode=myreturn.split(',')[2]
-                mynode=mynode.strip()                
-
-                # an ASM diskgroup used by the source database is mounted on one of the target nodes
-                if( myasmdg in lst_src_asm_diskgroups ):
-                    print( f'target ASM diskgroup {myasmdg} is mounted on node {tgt_host}' )
-                    lst_src_asm_diskgroups.remove( myasmdg )
-
-        # the lst_src_asm_diskgroups list should now be empty
-        #print( f'{lst_src_asm_diskgroups}' )
-
-        if( len( lst_src_asm_diskgroups )>0 ):
-            mounted+=len( lst_src_asm_diskgroups )
-            my_mounted_diskgroups=", ".join( lst_src_asm_diskgroups )
-
-            print( f'ASM diskgroups {my_mounted_diskgroups} did not mount on node {tgt_host}' )
-
-    if( mounted>0 ): fa_pg_snap.mError( halt, 0, 'target ASM diskgroups failed to mounted' )
+    if( nFail>0 ): fa_pg_snap.mError( HALT, 0, 'target ASM diskgroups failed to mount' )
         
 
 
@@ -1107,20 +1129,23 @@ def doMain( ):
 
     if( ora_target_mode != "DOWN" ):
 
-        # reset the SPFILE to match the source
-        tgt_sid = mOraStartTargetRemote( tgt_host, tgt_port, tgt_user_oracle, tgt_pass_oracle, tgt_key_oracle, tgt_db, tgt_cs_db, "NOMOUNT", False )
+        # was the snapshot taken with the source in backup mode?
+        bTagBackupMode = ( fa_pg_ora_snap.dictDBParams.get( 'backup_mode' )=="Yes" )
+
+        # start NOMOUNT so that the SPFILE can be reset to match the source
+        tgt_sid = fOraStartTargetRemote( tgt_host, tgt_port, tgt_user_oracle, tgt_pass_oracle, tgt_key_oracle, tgt_db, tgt_cs_db, "NOMOUNT", False )
 
         # reset the target SPFILE
         print( '============'  )
         mOraResetTargetSPFILERemote( tgt_host, tgt_port, tgt_user_oracle, tgt_pass_oracle, tgt_key_oracle, tgt_sid, tgt_cs_db )
 
         # shut down the target database to re-read the spfile
-        mOraStopTargetRemote( tgt_host, tgt_port, tgt_user_oracle, tgt_pass_oracle, tgt_key_oracle, tgt_db )
+        fOraStopTargetRemote( tgt_host, tgt_port, tgt_user_oracle, tgt_pass_oracle, tgt_key_oracle, tgt_db )
 
         # restart the instance 
         print( '============'  )
         print( f'restarting target database' )
-        mOraStartTargetRemote( tgt_host, tgt_port, tgt_user_oracle, tgt_pass_oracle, tgt_key_oracle, tgt_db, tgt_cs_db, ora_target_mode, (True if fa_pg_ora_snap.dictDBParams.get( 'backup_mode' )=="Yes" else False ) )
+        fOraStartTargetRemote( tgt_host, tgt_port, tgt_user_oracle, tgt_pass_oracle, tgt_key_oracle, tgt_db, tgt_cs_db, ora_target_mode, bTagBackupMode )
 
         # check state of the target database
         caTargetOraStatus = 'DOWN'
@@ -1128,15 +1153,13 @@ def doMain( ):
 
         mDebug( 3, f'target database state check:{sql_result}' )
 
-        # fRemoteSQLExecute above will return a list, the first entry of which should be RES:STATE - we want the STATE
-        try:
-            caTargetOraStatus=sql_result[0].split(':')[1]
-        except:
-            caTargetOraStatus='DOWN'
+        # fRemoteSQLExecute returns a list, the first entry of which should be RES:STATE - we want the STATE
+        if( sql_result and ':' in sql_result[0] ):
+            caTargetOraStatus = sql_result[0].split(':',1)[1]
 
         # if we are a container database....
-        myres = fa_pg_ora_snap.dictDBParams.get( 'enable_pluggable_database', [] )
-        if( myres=='TRUE' and ora_target_mode=='OPEN' ):
+        myres = fa_pg_ora_snap.dictDBParams.get( 'enable_pluggable_database', not_defined )
+        if( str(myres).upper()=='TRUE' and ora_target_mode=='OPEN' ):
 
             print( 're-opening pluggable databases' )
             mOraStartPluggableRemote( tgt_host, tgt_port, tgt_user_oracle, tgt_pass_oracle, tgt_key_oracle, tgt_sid, tgt_cs_db, ora_target_mode )
@@ -1154,4 +1177,5 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
+
 
