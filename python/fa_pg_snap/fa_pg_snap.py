@@ -1,7 +1,7 @@
 #
 # Python script to snapshot a PG and optionally re-sync to a target PG
 #
-# Graham Thornton - June 2026
+# Graham Thornton - May 2026
 # gthornton@everpuredata.com
 #
 # requires py_pure_client
@@ -29,22 +29,31 @@ from collections import defaultdict
 from typing import NamedTuple
 
 # global variables
-halt=1
-nohalt=0
-version = "1.1.0"
+HALT=1
+NOHALT=0
+I_BYTES_PER_GB = 1024**3
+
+version = "1.2.0"
 not_defined = "Not Defined"
 
 # main dictionary for script variables
 dictArgs={}
 
 # dictionaries of souce and target volumes
-# each dictionary uses id as key then volname|size
-# dictTargetVols also might have a 3rd datum which is the source vol id
+# each dictionary uses id as key then a VolEntry tuple
 dictSourceVols={}
 dictTargetVols={}
 
 # disable the HTTPS warnings
 urllib3.disable_warnings()
+
+from dataclasses import dataclass
+
+@dataclass
+class VolEntry:
+    caMap:  str
+    caName: str
+    iSize:  int
 
 #
 # clean quit
@@ -52,37 +61,32 @@ urllib3.disable_warnings()
 
 def mQuit( message=None ):
 
-    if( message != None ):
+    if( message is not None ):
         print( '============' )
         print( message )
 
     print( '============' )
     print( 'program terminated' )
-    quit()
+    sys.exit( )
 
 #
 # generic error handler
 #
 
-def mError( halt, return_code, message ):
+def mError( my_halt, return_code, message ):
     print( '============' )
     print( f'error:{message}' )
     if( return_code !=0 ): print( f'return code:{return_code}' );
 
-    # do we need to halt execution?
-    if( halt>0 ): mQuit()
+    # do we need to HALT execution?
+    if( my_halt == HALT ): mQuit()
 
 
 def fNotNone( foo, bar ):
-    if foo==None: return bar
+    if foo is None: return bar
     return foo
 
-def fDictBool( key, default_bool ):
-    rbool = default_bool
-    xx = dictArgs.get ( key, not_defined )
-    if( xx=="True" ): rbool=True
-    if( xx=="False" ): rbool=False
-    return rbool
+
 
 ##############################################
 
@@ -100,12 +104,10 @@ def fReadConnectionJSON( myfile ):
             data = json.load(file)
             return data
     except FileNotFoundError:
-        mQuit( "unable to open file:"+myfile )
+        mQuit( f'Error: unable to open file: {myfile}' )
 
-        return None
     except json.JSONDecodeError:
-        print(f'Error: Invalid JSON format in:{myfile}')
-        return None
+        mQuit( f'Error: invalid JSON format in :{myfile}' )
 
 
 #
@@ -125,6 +127,26 @@ def mWriteConnectionJSON( myfile, mydict ):
 ##############################################
 
 #
+# generic API call handler
+#
+
+def fAPICall( fn, message, **kwargs ):
+
+    try:
+        response = fn( **kwargs )
+
+        if( response.status_code != 200 ):
+            mError( HALT, response.status_code, response.errors[0].message )
+
+        return response
+
+    except Exception as e:
+
+        mError( NOHALT, 0, f'{message}: {e}' )
+
+        return None
+
+#
 # connect to the flash array
 #
 
@@ -133,21 +155,27 @@ def fFAConnect( my_flash_array, my_flash_array_api_token, my_flash_array_api_ver
     print( '============' )
     print( f'connecting to Flash Array:{my_flash_array} API Version:{my_flash_array_api_version}' )
 
+    dict_client_args = {
+        'target': my_flash_array,
+        'api_token': my_flash_array_api_token,
+    }
+
+    if( my_flash_array_api_version is not None ):
+        dict_client_args['version'] = my_flash_array_api_version
+
     try:
 
-        if( my_flash_array_api_version == None ):
-            array=flasharray.Client( target=my_flash_array, api_token=my_flash_array_api_token )
-        else:
-            array=flasharray.Client( target=my_flash_array, api_token=my_flash_array_api_token, version=my_flash_array_api_version )
+        array=flasharray.Client( **dict_client_args )
 
-        response = array.get_arrays()
+    except Exception as e:
 
-        if ( response.status_code == 200): print( "connected" )
-        else: mError( halt, response.status_code, response.reason )
+        mError( HALT, 0, f'fFAConnect failed\nmessage:{e}\nplease check Flash Array connectivity and API token' )
+        return None
 
-    except:
-        mError( halt, 0, 'fFAConnect failed, please check Flash Array connectivity and API token' )
+    response = fAPICall( array.get_arrays, 'fFAConnect failed, please check Flash Array connectivity and API token' )
+    if response is None: return None
 
+    print( "connected" )
     return array
 
 #
@@ -155,16 +183,13 @@ def fFAConnect( my_flash_array, my_flash_array_api_token, my_flash_array_api_ver
 #
 def fFAQueryName( my_array ):
 
-    try:
-        response = my_array.get_arrays()
-        arrays = list(response.items)
-        array_name = arrays[0].name
-        return array_name
+    response = fAPICall( my_array.get_arrays, 'call to get_arrays failed' )
 
-    except:
+    if response is None: return not_defined
 
-        return not_found
-
+    arrays = list(response.items)
+    array_name = arrays[0].name
+    return array_name
 
 #
 # check if the snapshot exists
@@ -175,17 +200,11 @@ def fQuerySnapExists( my_array, my_snapshot_name, my_protection_group ):
     print( '============' )
     print( f'determining if snapshot {my_snapshot_name} exists for protection group:{my_protection_group}' )
 
-    try:
-        response = my_array.get_protection_group_snapshots( source_names=[my_protection_group] )
-
-    except:
-        mError( halt, 0, 'call to get_protection_group_snapshots failed' )
-
-    if ( response.status_code != 200 ):
-        #print( response.errors[0] )
-        #print( response.errors[0].message )
-
-        mError( halt, response.status_code, response.errors[0].message )
+    response = fAPICall( 
+        my_array.get_protection_group_snapshots, 
+        'call to get_protection_group_snapshots failed',
+        source_names=[my_protection_group]
+    )
 
     for myoutput in response.items:
 
@@ -193,7 +212,7 @@ def fQuerySnapExists( my_array, my_snapshot_name, my_protection_group ):
 
         if myoutput.suffix == my_snapshot_name:
 
-            print( f'snapshot {myoutput.suffix} exists' )
+            print( f'snapshot {my_snapshot_name} exists' )
             return True
 
     return False
@@ -239,20 +258,17 @@ def fCreateSnapshot( my_array, my_safe_mode, my_snapshot_name, my_protection_gro
         )
 
         #print( f'{snap_body}' )
-        try:
-            response = my_array.post_protection_group_snapshots( 
-                source_names=[my_protection_group], 
-                replicate=my_replicate,
-                protection_group_snapshot=snap_body,
-            )
 
-        except:
-            mError( halt, 0, 'call to post_protection_group_snapshots' )
+        response = fAPICall( 
+            my_array.post_protection_group_snapshots,
+            'call to post_protection_group_snapshots failed',
+            source_names=[my_protection_group],
+            replicate=my_replicate,
+            protection_group_snapshot=snap_body
+        )
 
-        if ( response.status_code != 200 ): 
-            #print( response )
-            mError( halt, response.status_code, response.errors[0].message )
-
+        # an empty name signals to the caller that no snapshot was created
+        if response is None: return ""
 
     return my_snapshot_name
 
@@ -268,12 +284,13 @@ def fQueryVolsinPG( my_array, my_protection_group, my_array_name ):
 
     lst_my_vols=[]
 
-    try:
-        response = my_array.get_protection_groups_volumes( group_names=[my_protection_group] )
-    except:
-        mError( halt, 0, 'call to get_protection_groups_volumes failed' )
+    response = fAPICall( 
+        my_array.get_protection_groups_volumes,
+        'call to get_protection_groups_volumes failed',
+        group_names=[my_protection_group] 
+    )
 
-    if ( response.status_code != 200 ): mError( halt, response.status_code, response.errors[0].message )
+    if response is None: return lst_my_vols
 
     # this returns a JSON doc of dictionaries
 
@@ -282,7 +299,6 @@ def fQueryVolsinPG( my_array, my_protection_group, my_array_name ):
         lst_my_vols.append( myoutput.member['name'] )
 
         print( myoutput.member['name'] )
-        # print( myoutput.member['id'] )
 
     return lst_my_vols
 
@@ -299,18 +315,20 @@ def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, ls
     print( f'listing the volumes for snapshot:{my_snapshot_name}' )
 
     # since this might be replicated the array might be prefixed so we pull all snapshots and inspect
-    try:
-        response = my_array.get_volume_snapshots( )
-    except:
-        mError( halt, 0, 'call to get_volume_snapshots failed' )
-
-    if ( response.status_code != 200 ): mError( halt, response.status_code, 'call to get_volume_snapshots failed' )
+    response = fAPICall( 
+        my_array.get_volume_snapshots,
+        'call to get_volume_snapshots failed'
+    )
 
     for myoutput in response.items:
 
-        #print( myoutput )
-        #print( myoutput.name )
-        if( my_protection_group+'.'+my_snapshot_name in myoutput.name ):
+        # determine if this snapshot volume is part of our pg snapshot
+        # snapshot volumes will be named for example:
+        # sn1-x90r2-f05-27:gct-oradb-demo-prd01-pg.jun111653.gct-oradb-demo-prd01-fra-01
+        # we will remove the volume name (the last section) and pass the remainder to 
+        # fNameMatches
+
+        if( fNameMatches( myoutput.name.rsplit( '.', 1 )[0], my_protection_group, my_snapshot_name )):
 
             # check if this volume is excluded from mapping
             if myoutput.source.id in lst_excluded_vols:
@@ -319,8 +337,8 @@ def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, ls
 
             else:
                 nVols+=1
-                dictSourceVols.update({ myoutput.source.id: '0|'+myoutput.name+'|'+str(myoutput.space.total_provisioned) })
-                print( f'name:{myoutput.name} size:{myoutput.space.total_provisioned/1073741824} GB' )
+                dictSourceVols[ myoutput.source.id ] = VolEntry( '0', myoutput.name, myoutput.space.total_provisioned )
+                print( f'name:{myoutput.name} sz:{myoutput.space.total_provisioned/I_BYTES_PER_GB} GB' )
 
 
     return nVols
@@ -338,16 +356,26 @@ def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols ):
     print( 'querying target volume details' )
 
     # get the capacities of the volume list
-    response = my_array.get_volumes_space( names=lst_my_vols )
+    response = fAPICall(
+        my_array.get_volumes_space,
+        'call to get_volumes_space failed',
+        names=lst_my_vols 
+    )
+
     for myoutput in response.items:
 
-        print( f'name:{myoutput.name} id:{myoutput.id} size:{myoutput.space.total_provisioned/1073741824}' )
+        print( f'nm:{myoutput.name}\n  id:{myoutput.id}' )
 
         # check to see if this target volume has a source mapping
         # this is stored as a kv tag on the target volume snapshot_mapping:id
         # where id is the source volume that will map to this target
         src_map='0'
-        response2 = my_array.get_volumes_tags( resource_names=[myoutput.name] )
+
+        response2 = fAPICall(
+            my_array.get_volumes_tags,
+            'call to get_volumes_tags failed',
+            resource_names=[myoutput.name] 
+        )
 
         # there is a tag
         for myoutput2 in response2.items:
@@ -364,16 +392,14 @@ def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols ):
 
                 # for the value, check if it is a valid volume id in the source dictionary
                 # if so, this will return a tupple: tmap|name|size
-                src_val = dictSourceVols.get( src_map, "not_present" )
-                if( src_val != 'not_present' ):
-                    lst_src_vals = src_val.split( '|' )
-                    src_name = lst_src_vals[1]
-                    src_size_gb = int(lst_src_vals[2])/1073741824
+                if( (src_val := dictSourceVols.get( src_map )) is not None ):
+                    src_name = src_val.caName
+                    src_size_gb = src_val.iSize / I_BYTES_PER_GB
+                    print( f'  is a target for {src_name}\n  sz:{src_size_gb} GB' )
 
-                    print( f'   is a target for {src_name} size:{src_size_gb} GB' )
 
         # update the target dictionary with the source mapping, name and size in bytes of this volume id
-        dictTargetVols.update({ myoutput.id: src_map+'|'+myoutput.name+'|'+str(myoutput.space.total_provisioned) })
+        dictTargetVols[ myoutput.id ] = VolEntry( src_map, myoutput.name, myoutput.space.total_provisioned ) 
 
 
 #
@@ -390,37 +416,35 @@ def fCreateVolumeMap( ):
     print( '============' )
     print( 'determining volume mapping' )
 
-    unmatched=0
+    nUnmatched=0
 
-    for i, (src_key, src_val) in enumerate(dictSourceVols.items()):
+    for src_key, src_val in dictSourceVols.items():
+        src_tmap = src_val.caMap
+        src_name = src_val.caName
+        src_size = src_val.iSize
 
-        lst_src_vals = src_val.split( '|' )
-        src_tmap = lst_src_vals[0]
-        src_name = lst_src_vals[1]
-        src_size = lst_src_vals[2]
-
-        print( f'nm:{src_name} src id:{src_key} map:{src_tmap} sz:{int(src_size)/1073741824}' )
+        print( f'nm:{src_name}\n  src id:{src_key} map:{src_tmap}\n  sz:{src_size/I_BYTES_PER_GB} GB' )
 
         # if this src vol is not matched, is there a tagged target for this volume?
         if( src_tmap=='0' ):
 
             print( '  checking for tag matched volume' )
 
-            for i2, (tgt_key, tgt_val) in enumerate(dictTargetVols.items()):
+            for tgt_key, tgt_val in dictTargetVols.items():
+                tgt_smap = tgt_val.caMap
+                tgt_name = tgt_val.caName
+                tgt_size = tgt_val.iSize
 
-                lst_tgt_vals = tgt_val.split( '|' )
-                tgt_smap = lst_tgt_vals[0]
-                tgt_name = lst_tgt_vals[1]
-                tgt_size = lst_tgt_vals[2]
-
-                #print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{tgt_size/1073741824}' )
+                #print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{tgt_size/I_BYTES_PER_GB}' )
 
                 # if the targets smap matched source id
-                if( src_tmap=='0' and tgt_smap==src_key ):
-                    print( f'    volume {src_name} will be synced to {tgt_name}' )
-                    dictSourceVols.update({ src_key: tgt_key+'|'+src_name+'|'+src_size })
-                    dictTargetVols.update({ tgt_key: src_key+'|'+tgt_name+'|'+tgt_size })
+                if( tgt_smap==src_key ):
+                    print( f'  will be synced to {tgt_name}' )
+                    dictSourceVols[ src_key ] = VolEntry( tgt_key, src_name, src_size )
+                    dictTargetVols[ tgt_key ] = VolEntry( src_key, tgt_name, tgt_size )
+
                     src_tmap=tgt_key
+                    break
 
 
         # if this src vol is not matched, is there an unmatched target of equal size?
@@ -429,20 +453,20 @@ def fCreateVolumeMap( ):
             print( '  checking for unmatched volume of equal size' )
 
             # is there a matching target for this volume?
-            for i2, (tgt_key, tgt_val) in enumerate(dictTargetVols.items()):
+            for tgt_key, tgt_val in dictTargetVols.items():
+                tgt_smap = tgt_val.caMap
+                tgt_name = tgt_val.caName
+                tgt_size = tgt_val.iSize
 
-                lst_tgt_vals = tgt_val.split( '|' )
-                tgt_smap = lst_tgt_vals[0]
-                tgt_name = lst_tgt_vals[1]
-                tgt_size = lst_tgt_vals[2]
+                print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{int(tgt_size)/I_BYTES_PER_GB} GB' )
 
-                print( f'    tgt key:{tgt_key} smap:{tgt_smap} nm:{tgt_name} sz:{int(tgt_size)/1073741824}' )
-
-                if( src_tmap=='0' and tgt_smap=='0' and int(tgt_size)==int(src_size) ):
+                if( tgt_smap=='0' and tgt_size==src_size ):
 #                    print( 'volume '+src_name+' will be synced to '+tgt_name )
-                   dictSourceVols.update({ src_key: tgt_key+'|'+src_name+'|'+src_size })
-                   dictTargetVols.update({ tgt_key: src_key+'|'+tgt_name+'|'+tgt_size })
-                   src_tmap=tgt_key
+                    dictSourceVols[ src_key ] = VolEntry( tgt_key, src_name, src_size )
+                    dictTargetVols[ tgt_key ] = VolEntry( src_key, tgt_name, tgt_size )
+
+                    src_tmap=tgt_key
+                    break
 
 
 
@@ -452,30 +476,29 @@ def fCreateVolumeMap( ):
             print( '  checking for unmatched volume of larger size' )
 
             # is there a matching target for this volume?
-            for i2, (tgt_key, tgt_val) in enumerate(dictTargetVols.items()):
-
-                lst_tgt_vals = tgt_val.split( '|' )
-                tgt_smap = lst_tgt_vals[0]
-                tgt_name = lst_tgt_vals[1]
-                tgt_size = lst_tgt_vals[2]
+            for tgt_key, tgt_val in dictTargetVols.items():
+                tgt_smap = tgt_val.caMap
+                tgt_name = tgt_val.caName
+                tgt_size = tgt_val.iSize
 
 #                print( '    tgt key:'+tgt_key+' smap:'+tgt_smap+' nm:'+tgt_name+' sz:'+tgt_size )
 
-                if( src_tmap=='0' and tgt_smap=='0' and int(tgt_size)>=int(src_size) ):
+                if( tgt_smap=='0' and tgt_size>=src_size ):
 #                   print( 'volume '+src_name+' will be synced to '+tgt_name )
-                    dictSourceVols.update({ src_key: tgt_key+'|'+src_name+'|'+src_size })
-                    dictTargetVols.update({ tgt_key: src_key+'|'+tgt_name+'|'+tgt_size })
+                    dictSourceVols[ src_key ] = VolEntry( tgt_key, src_name, src_size )
+                    dictTargetVols[ tgt_key ] = VolEntry( src_key, tgt_name, tgt_size )
                     src_tmap=tgt_key
+                    break
 
         # catch a no-match
         if( src_tmap=='0' ):
 
-            unmatched+=1
+            nUnmatched+=1
             print( '  no matching target volume found' )
 
 
     # how many volumes were we unable to match
-    return unmatched
+    return nUnmatched
 
 
 #
@@ -485,21 +508,21 @@ def fQuerySnapshotReplication( my_array, my_array_name, my_protection_group, my_
 
     def fQuerySnapshotReplicationSub( my_array, my_target ):
 
-        try:
-            response = my_array.get_protection_group_snapshots_transfer( names=[my_target] )
-        except:
-            mError( halt, 0, 'call to get_protection_group_snapshots_transfer failed' )
+        response = fAPICall( 
+            my_array.get_protection_group_snapshots_transfer,
+            'call to get_protection_group_snapshots_transfer failed',
+            names=[my_target] 
+        )
 
-        if ( response.status_code != 200 ): mError( halt, response.status_code, 'call to get_protection_group_snapshots_transfer failed' )
+        if response is None: return None
+
         try:
             data = list(response.items)
-            progress = data[0].progress
-        except:
-            progress='0'
+            return data[0].progress
+        except ( IndexError, TypeError ):
+            return None
 
-        return progress
-
-    if( my_safe_mode==True): return 
+    if( my_safe_mode ): return True
 
     # build the name of the target snapshot to look for 
     # it will be src_array_name:src_pg:snapname
@@ -508,49 +531,48 @@ def fQuerySnapshotReplication( my_array, my_array_name, my_protection_group, my_
     print( '============' )
     print( 'waiting on snapshot replication' )
 
-    count=0
+    nCount=0
     retval=False
-    while( count<my_repeat ):
-        count+=1
+    while( nCount<my_repeat ):
+        nCount+=1
         progress = fQuerySnapshotReplicationSub( my_array, my_target )
-        if( int(progress)>=1 ): 
+        if progress is not None and float(progress) >= 1.0:
             retval=True
             break
+        print( ".", end="", flush=True )
         time.sleep(my_sleep)
+
+    if( retval ): print( "\nreplication complete" )
+    else: print( "\nreplication wait timed out" )
 
     return retval
     
 #
 # process the dictSourceVols and then fetch the matching volume from dictTargetVols
 # use the REST API call to sync the target to the source snapshot volume
-# call fMapVolumesSub until it succeeds
-# this is useful for replication scenarios where it might take a few minutes for the 
-# snapshot to replicate
 #
 
-def fMapVolumes( my_array, my_safe_mode ):
+def mMapVolumes( my_array, my_safe_mode ):
     
     print( '============' )
     print( 'mapping the volumes' )
 
-    for i, (src_key, src_val) in enumerate(dictSourceVols.items()):
+    for src_key, src_val in dictSourceVols.items():
+        src_tmap = src_val.caMap
+        src_name = src_val.caName
+        src_size = src_val.iSize
+        #src_tmap, src_name, src_size = src_val
 
-        lst_src_vals = src_val.split( '|' )
-        src_tmap = lst_src_vals[0]
-        src_name = lst_src_vals[1]
-        src_size = lst_src_vals[2]
-
-        #print( f'src key:{src_key} map:{src_tmap} nm:{src_name} sz:{src_size}' )
+        print( f'{src_name}\n  src key:{src_key}\n  map:{src_tmap}' )
 
         # get the matching target
+
         tgt_val = dictTargetVols.get( src_tmap )
+        if( tgt_val is not None ):
+            tgt_name = tgt_val.caName
+            tgt_size = tgt_val.iSize
 
-        if( tgt_val != None ):
-
-            lst_tgt_vals = tgt_val.split( '|' )
-            tgt_name = lst_tgt_vals[1]
-            tgt_size = lst_tgt_vals[2]
-            print( f'{src_name} will be syncd to {tgt_name}' )
+            print( f'  will be syncd to {tgt_name}' )
 
             myvol={
                 'source': {'name': src_name },
@@ -558,20 +580,19 @@ def fMapVolumes( my_array, my_safe_mode ):
             }
 
             if( src_size != tgt_size ):
-                print( f'target volume will be resized from {int(tgt_size)/1073741824} GB to match source source volume size:{int(src_size)/1073741824} GB' )
+                print( f'target volume will be resized from {int(tgt_size)/I_BYTES_PER_GB} GB to match source source volume sz:{int(src_size)/I_BYTES_PER_GB} GB' )
 
             if( my_safe_mode ):
 
                 print( 'NOTE: safety lock engaged - disable to sync the target volume' )
 
             else:
-                try:
-                    response = my_array.post_volumes( names=[tgt_name], overwrite=True, volume=myvol )
-                except:
-                    mError( halt, 0, 'call to post_volumes failed' )
 
-                #if ( response.status_code != 200 ): mError( halt, response.status_code, response.errors[0].message )
-                if ( response.status_code != 200 ): return response.errors[0].message
+                response = fAPICall( 
+                    my_array.post_volumes,
+                    'call to post_volumes failed',
+                    names=[tgt_name], overwrite=True, volume=myvol 
+                )
 
                 # record the mapping so that when we refresh, the same disks map to the same volumes
                 kv={
@@ -579,15 +600,15 @@ def fMapVolumes( my_array, my_safe_mode ):
                     'value': src_key,
                 }
 
-                try:
-                    response = my_array.put_volumes_tags_batch( resource_names=[tgt_name], tag=[kv] )
-                except:
-                    mError( halt, 0, 'call to put_volumes_tags_batch failed' )
+                response2 = fAPICall( 
+                    my_array.put_volumes_tags_batch,
+                    'call to put_volumes_tags_batch failed',
+                    resource_names=[tgt_name], tag=[kv]
+                )
 
         else:
-            print( 'NOTE: there is no mapping for '+src_name )
+            print( 'WARNING: there is no mapping for '+src_name )
 
-    return ""
 
 #
 # write the volumes found in the snapshot to the specified file
@@ -598,27 +619,22 @@ def mWriteVolumesinSnapshot( output_file, lst_excluded_vols ):
     print( '============' )
 
     try:
-        f = open(output_file, "w")
-        print( f'writing the snapshot list to:{output_file}' )
-    except:
-        output_file=''
-        mError( nohalt, 0, 'unable to write to '+output_file )
 
-    for i, (key, val) in enumerate(dictSourceVols.items()):
+        with open(output_file, "w") as f:
 
-        lst_vals = val.split( '|' )
-        tmap = lst_vals[0]
-        name = lst_vals[1]
-        size = lst_vals[2]
+            print( f'writing the snapshot list to:{output_file}' )
 
-        #print( 'id:'+key+' map:'+tmap+' nm:'+name+' sz:'+size )
-        if key in lst_excluded_vols:
-            print( f'vol:{name} is excluded from output file' )
-        else:
-            print( f'vol:{name}' )
-            if( len(output_file)>0 ): f.write( name+'\n' )
+            for src_key, src_val in dictSourceVols.items():
 
-    if( len(output_file)>0 ): f.close()
+                if src_key in lst_excluded_vols:
+                    print( f'vol:{src_val.caName} is excluded from output file' )
+                else:
+                    print( f'vol:{src_val.caName}' )
+                    f.write( src_val.caName+'\n' )
+
+    except OSError as e:
+        mError( NOHALT, 0, f'unable to write to {output_file}: {e}' )
+
 
 ##############################################
 
@@ -645,10 +661,11 @@ def fFindMatchingSnapshots(my_array, my_protection_group, my_suffix):
 
     while True:
 
-        response = my_array.get_protection_group_snapshots( continuation_token=continuation_token )
-
-        if response.status_code != 200:
-            mError( halt, 0, f'call to get_protection_group_snapshots failed: {response.errors}' )
+        response = fAPICall( 
+            my_array.get_protection_group_snapshots,
+            'call to get_protection_group_snapshots failed',
+             continuation_token=continuation_token
+        )
 
         items = list(response.items)
         for snap in items:
@@ -671,12 +688,13 @@ def fResourceNameOf( my_tag ):
         return resource.get("name")
     return getattr(resource, "name", None)
 
-class snapshot_tag(NamedTuple):
+class SnapshotTag(NamedTuple):
     namespace: str 
     key: str 
     value: str
 
-# for a given protection group and snapshot name, read the tags and return it as a dictionary
+# for a given protection group and snapshot name
+# read the tags and return it as a list of tupes (namespace, key value)
 
 def fQuerySnapshotTags( my_array, my_protection_group, my_snapshot_name ):
 
@@ -685,31 +703,32 @@ def fQuerySnapshotTags( my_array, my_protection_group, my_snapshot_name ):
     if not lst_snapshots: mQuit( "snapshot exists but no matching snapshot found" )
 
     #print( f'{lst_snapshots}' )
+    response = fAPICall( 
+        my_array.get_protection_group_snapshots_tags,
+        'call to get_protection_group_snapshots_tags failed',
+        resource_names=lst_snapshots 
+    )
 
-    tag_response = my_array.get_protection_group_snapshots_tags( resource_names=lst_snapshots )
-
-    #print( f'{tag_response}' )
+    #print( f'{response}' )
 
     tags_by_snapshot = defaultdict(list)
 
-    for tag in tag_response.items: tags_by_snapshot[fResourceNameOf(tag)].append(tag)
+    for tag in response.items: tags_by_snapshot[fResourceNameOf(tag)].append(tag)
 
     #print( f'tags by snapshot:{tags_by_snapshot}' )
 
     lst_return=[]
-    any_tags = False
     for snap_name in lst_snapshots:
         snap_tags = tags_by_snapshot.get(snap_name, [])
         if snap_tags:
-            any_tags = True
-            #print(f"Tags for {snap_name}:")
+            print(f"tags for {snap_name}:")
             for tag in snap_tags:
                 #print(f"  [{tag.namespace}] {tag.key}={tag.value}")
-                lst_return.append( snapshot_tag( tag.namespace, tag.key, tag.value ))
+                lst_return.append( SnapshotTag( tag.namespace, tag.key, tag.value ))
 
 
         else:
-            print(f"{snap_name}: not found")
+            print(f"snapshot {snap_name} not found")
 
     #print( f'{lst_return}' )
     return lst_return
@@ -725,8 +744,8 @@ def doMain( ):
     # parse the command line args
     parser = argparse.ArgumentParser(
                     prog='fa_pg_snap ', usage='%(prog)s [-s -t -n -f -i -r -o -x -h]',
-                    description='snapshot a protection group on a Pure Flash Array',
-                    epilog='coded by Graham Thornton - gthornton@purestorage.com')
+                    description='snapshot a protection group on an Everpure Flash Array',
+                    epilog='coded by Graham Thornton - gthornton@everpuredata.com')
 
     parser.add_argument('-s','--source_protection_group', help='source pg', required=False)
     parser.add_argument('-t','--target_protection_group', help='target pg', required=False)
@@ -750,7 +769,6 @@ def doMain( ):
     #
     # read the config file
     #
-    dictArgs={}
     if( args.config_file != None ): dictArgs = fReadConnectionJSON( args.config_file )
 
     # fa variables for source array
@@ -834,14 +852,6 @@ def doMain( ):
     #
     lst_source_vols = fQueryVolsinPG( myArraySrc, source_protection_group, src_array_name )
 
-    if target_protection_group!=not_defined: 
-
-        #
-        # query the volumes of the target pg
-        # collect these in lst_target_vols
-        #
-        lst_target_vols = fQueryVolsinPG( myArrayTgt, target_protection_group, tgt_array_name )
-
 
     #
     # if the snapshot does not exist create it
@@ -867,6 +877,7 @@ def doMain( ):
 
         for tag in lst_tags:
 
+            print( f'key:{tag.key} value:{tag.value}' )
             if( tag.key == "replicate" ):
                 
                 if( bReplicate and str(bReplicate) != tag.value ):
@@ -901,14 +912,12 @@ def doMain( ):
     fQueryVolumesinSnapshot( myArrayTgt, source_protection_group, snapshot_name, lst_source_vols, lst_excluded_vols )
 
 
-
     #
     # if an output file was specified, then write the volume names to it
     #
     if( args.output_file != None ):
         print( '============' )
         lst_excluded_vols = dictArgs.get( "excluded_volumes", [] )
-        for vol in lst_excluded_vols: print ( f'excluding:{vol}' )
         mWriteVolumesinSnapshot( args.output_file, lst_excluded_vols )
 
 
@@ -948,12 +957,12 @@ def doMain( ):
     if( bReplicate ):    
         retval = fQuerySnapshotReplication( myArrayTgt, src_array_name, source_protection_group, snapshot_name, 10, 5, args.execute_lock )
         if( retval==False ):
-            mError( halt, 0, 'snapshot replication did not complete in the time allowed' )
+            mError( HALT, 0, 'snapshot replication did not complete in the time allowed' )
 
     #
     # process the dictSourceVols and then fetch the matching volume from dictTargetVols
     #
-    fMapVolumes( myArrayTgt, args.execute_lock )
+    mMapVolumes( myArrayTgt, args.execute_lock )
 
 
 
@@ -965,5 +974,6 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
+
 
 
