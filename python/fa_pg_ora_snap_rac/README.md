@@ -95,160 +95,145 @@ When an existing snapshot is used, these tags are read back and used to reset th
 In the example below, the database PRDCDB is running on a pair of Linux servers.  It has its ASM diskgroups in an Everpure Flash Array protection group called gct-oradb-rac-prd-data-pg\
 The code will place the source database into backup mode, snapshot that protection group, and then overwrite corresponding volumes on Linux RAC cluster gct-oradb-tst-rac01 and gct-oradb-tst-rac02.  The code will then mount the cloned ASM diskgroups on the target RAC cluster, mount the cloned database and open it read-write.\
 All of this is executed remotely from a scripting host.\
+(Output captured with an earlier version - message formatting differs slightly in the current version.)
 
 
 ```
-[oracle@gct-oradb-demo-tst01 py]$ python fa_pg_ora_snap.rac.py -f json/prdrac_2_tstrac.json -n jun121246 -r -x -b -o open
+[oracle@gct-oradb-demo-tst01 py]$ python fa_pg_ora_snap.rac.py -f json/clone_rac_database.json -n jun021703 -r -x -b -o open
 ============
-fa_pg_ora_snap.rac.py 1.9.0 started at 2026-06-12 12:52:42.908169
+fa_pg_ora_snap.rac.py 1.9.0 started at 2026-06-02 17:03:40.073971
 ============
-connecting to Flash Array:sn1-x90r2-f06-27.puretec.purestorage.com API Version:2.44
+connecting to Flash Array:source_flash_array.localdomain API Version:2.27
 connected
 ============
-connecting to Flash Array:sn1-x90r2-f05-33.puretec.purestorage.com API Version:2.44
+connecting to Flash Array:target_flash_array.localdomain API Version:2.27
 connected
 ============
-determining if snapshot jun121246 exists for protection group:gct-oradb-rac-prd-data-pg
-snapshot jun121246 exists
+determining if snapshot jun021703 exists for protection group:gct-oradb-rac-prd-data-pg
 source protection group:gct-oradb-rac-prd-data-pg
 target protection group:gct-oradb-rac-tst-data-pg
 ============
-reading tags from snapshot
-tags for gct-oradb-rac-prd-data-pg.jun121246:
-db_name PRDCDB
-db_id 3749697885
-db_time 2026/06/12 14:48:32
-db_unique_name prdcdb
-db_role PRIMARY
-db_threads 2
-db_open_mode READ WRITE
-archivelog_mode ARCHIVELOG
-flashback_mode NO
-platform_name Linux x86 64-bit
-encrypted_tablespaces 0
-version Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production,Version 19.22.0.0.0
-backup_mode Yes
-control_files +DATA/PRDCDB/CONTROLFILE/current.308.1233917149, +DATA/PRDCDB/CONTROLFILE/current.307.1233917149
-db_recovery_file_dest +DATA
-db_recovery_file_dest_size 13979615232
-enable_pluggable_database TRUE
-asm_disk_groups DATA
-open_pdbs PRDPDB
-replicate True
+connecting to source database:mydatabasehost:1521/prdcdb
+use backup mode:True
 ============
-querying the volumes for protection group:gct-oradb-rac-prd-data-pg on array sn1-x90r2-f06-27
+reading source database settings
+asm diskgroups: DATA
+database name: PRDCDB
+database id: 3749697885
+database time: 2026/06/02 19:03:40
+database open mode: READ WRITE
+database role: PRIMARY
+database threads: 2
+encrypted tablespaces: 0
+archivelog mode: ARCHIVELOG
+flashback mode: NO
+platform name: Linux x86 64-bit
+version: Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production,Version 19.22.0.0.0
+control_files: +DATA/PRDCDB/CONTROLFILE/current.308.1233917149, +DATA/PRDCDB/CONTROLFILE/current.307.1233917149
+db_recovery_file_dest: +DATA
+db_recovery_file_dest_size: 13979615232
+enable_pluggable_database: TRUE
+identifying the open pluggable databases
+no open pluggable databases found
+============
+source db begin backup mode
+============
+creating snapshot for gct-oradb-rac-prd-data-pg
+============
+source db end backup mode
+============
+querying the volumes for protection group:gct-oradb-rac-prd-data-pg on array source_flash_array
 gct-oradb-rac-prd-data00
 gct-oradb-rac-prd-data01
 gct-oradb-rac-prd-data02
 ============
 excluded volumes
 ============
-listing the volumes for snapshot:jun121246
-name:sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data00 sz:100.0 GB
-name:sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data01 sz:100.0 GB
-name:sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data02 sz:100.0 GB
+listing the volumes for snapshot:jun021703
+name:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 size:100.0 GB
+name:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 size:100.0 GB
+name:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 size:100.0 GB
 ============
 will use ssh key to connect as grid
 will use ssh key to connect as oracle
 ============
-determining ASM instance on host gct-oradb-tst-rac01.localdomain
+determining ASM instance on host mytstrac01.localdomain
 ASM instance on this host is +ASM1
-checking if target database cdbtst is configured on host gct-oradb-tst-rac01.localdomain
+checking if target database cdbtst is configured on host mytstrac01.localdomain
 checking if target database cdbtst is running on any host
 ============
-checking target ASM diskgroups are unmounted DATA on host gct-oradb-tst-rac01.localdomain
+checking target ASM diskgroups are unmounted DATA on host mytstrac01.localdomain
 ============
-determining ASM instance on host gct-oradb-tst-rac02.localdomain
+determining ASM instance on host mytstrac02.localdomain
 ASM instance on this host is +ASM2
-checking if target database cdbtst is configured on host gct-oradb-tst-rac02.localdomain
+checking if target database cdbtst is configured on host mytstrac02.localdomain
 checking if target database cdbtst is running on any host
 ============
-checking target ASM diskgroups are unmounted DATA on host gct-oradb-tst-rac02.localdomain
+checking target ASM diskgroups are unmounted DATA on host mytstrac02.localdomain
 ============
-querying the volumes for protection group:gct-oradb-rac-tst-data-pg on array sn1-x90r2-f05-33
+querying the volumes for protection group:gct-oradb-rac-tst-data-pg on array target_flash_array.localdomain
 gct-oradb-rac-tst-data00
 gct-oradb-rac-tst-data01
 gct-oradb-rac-tst-data02
 ============
 querying target volume details
-nm:gct-oradb-rac-tst-data00
-  id:c16f124e-ac41-74da-77e7-932cc21092b9
-  is a target for sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data00
-  sz:100.0 GB
-nm:gct-oradb-rac-tst-data01
-  id:ed666ee9-fb96-4ff9-7696-2ecde5492187
-  is a target for sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data01
-  sz:100.0 GB
-nm:gct-oradb-rac-tst-data02
-  id:3e490b40-7d8b-e9c7-0c27-7a0dad0c8bcd
-  is a target for sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data02
-  sz:100.0 GB
+name:gct-oradb-rac-tst-data00 id:c16f124e-ac41-74da-77e7-932cc21092b9 size:100.0
+   is a target for source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 size:100.0 GB
+name:gct-oradb-rac-tst-data01 id:ed666ee9-fb96-4ff9-7696-2ecde5492187 size:100.0
+   is a target for source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 size:100.0 GB
+name:gct-oradb-rac-tst-data02 id:3e490b40-7d8b-e9c7-0c27-7a0dad0c8bcd size:100.0
+   is a target for source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 size:100.0 GB
 ============
 determining volume mapping
-nm:sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data00
-  src id:c3b11b19-a44f-aaf1-9a5b-dc6f91fe356f map:0
-  sz:100.0 GB
+nm:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 src id:7ca9b19a-a260-23b0-032f-590897297e0e map:0 sz:100.0
   checking for tag matched volume
-  will be synced to gct-oradb-rac-tst-data00
-nm:sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data01
-  src id:227a2b95-ef7b-2bf2-f4f3-a98bea8281b8 map:0
-  sz:100.0 GB
+    volume source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 will be synced to gct-oradb-rac-tst-data00
+nm:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 src id:a6293a28-a82f-60ec-df1c-d7f6000d858d map:0 sz:100.0
   checking for tag matched volume
-  will be synced to gct-oradb-rac-tst-data01
-nm:sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data02
-  src id:e80706ce-7473-8eae-9b90-7666d6d97da7 map:0
-  sz:100.0 GB
+    volume source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 will be synced to gct-oradb-rac-tst-data01
+nm:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 src id:17dfedda-e53f-cdcb-0754-23956596aec2 map:0 sz:100.0
   checking for tag matched volume
-  will be synced to gct-oradb-rac-tst-data02
+    volume source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 will be synced to gct-oradb-rac-tst-data02
+============
+waiting on snapshot replication
+replication complete
 ============
 mapping the volumes
-sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data00
-  src key:c3b11b19-a44f-aaf1-9a5b-dc6f91fe356f
-  map:c16f124e-ac41-74da-77e7-932cc21092b9
-  will be syncd to gct-oradb-rac-tst-data00
-sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data01
-  src key:227a2b95-ef7b-2bf2-f4f3-a98bea8281b8
-  map:ed666ee9-fb96-4ff9-7696-2ecde5492187
-  will be syncd to gct-oradb-rac-tst-data01
-sn1-x90r2-f06-27:gct-oradb-rac-prd-data-pg.jun121246.gct-oradb-rac-prd-data02
-  src key:e80706ce-7473-8eae-9b90-7666d6d97da7
-  map:3e490b40-7d8b-e9c7-0c27-7a0dad0c8bcd
-  will be syncd to gct-oradb-rac-tst-data02
+source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 will be syncd to gct-oradb-rac-tst-data00
+source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 will be syncd to gct-oradb-rac-tst-data01
+source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 will be syncd to gct-oradb-rac-tst-data02
 ============
-rescaning the SCSI bus on target gct-oradb-tst-rac01.localdomain
-rescaning the SCSI bus on target gct-oradb-tst-rac02.localdomain
+rescaning the SCSI bus on target mytstrac01.localdomain
+rescaning the SCSI bus on target mytstrac02.localdomain
 ============
-mounting ASM diskgroups on host gct-oradb-tst-rac01.localdomain using ASM instance +ASM1
-mounting ASM diskgroups on host gct-oradb-tst-rac02.localdomain using ASM instance +ASM2
+mounting ASM diskgroups on host mytstrac01.localdomain using ASM instance +ASM1
+mounting ASM diskgroups on host mytstrac02.localdomain using ASM instance +ASM2
 ============
-checking target ASM diskgroups are mounted DATA on host gct-oradb-tst-rac01.localdomain
-target ASM diskgroup DATA is mounted on node 2
-target ASM diskgroup DATA is mounted on node 1
+checking target ASM diskgroups are mounted DATA on host mytstrac01.localdomain
+target ASM diskgroup DATA is mounted on node mytstrac01.localdomain
 ============
-checking target ASM diskgroups are mounted DATA on host gct-oradb-tst-rac02.localdomain
-target ASM diskgroup DATA is mounted on node 2
-target ASM diskgroup DATA is mounted on node 1
+checking target ASM diskgroups are mounted DATA on mytstrac02.localdomain
+target ASM diskgroup DATA is mounted on node mytstrac02.localdomain
 ============
 requested state of cdbtst is:OPEN
-starting database cdbtst to a NOMOUNT state using host gct-oradb-tst-rac01.localdomain and database instance cdbtst1
+starting database cdbtst to a NOMOUNT state using host mytstrac01.localdomain and database instance cdbtst1
 ============
-resetting the target SPFILE on host gct-oradb-tst-rac01.localdomain using instance cdbtst1
+resetting the target SPFILE on host mytstrac01.localdomain using instance cdbtst1
 alter system set db_name='PRDCDB' sid='*' scope=spfile;
 alter system set control_files='+DATA/PRDCDB/CONTROLFILE/current.308.1233917149','+DATA/PRDCDB/CONTROLFILE/current.307.1233917149' sid='*' scope=spfile;
 alter system set db_recovery_file_dest='+DATA' sid='*' scope=spfile;
 alter system set db_recovery_file_dest_size=13979615232 sid='*' scope=spfile;
 alter system set enable_pluggable_database=TRUE sid='*' scope=spfile;
-shutting down database cdbtst using host gct-oradb-tst-rac01.localdomain and database instance cdbtst1
+shutting down database cdbtst using host mytstrac01.localdomain and database instance cdbtst1
 ============
 restarting target database
-starting database cdbtst to a OPEN state using host gct-oradb-tst-rac01.localdomain and database instance cdbtst1
+starting database cdbtst to a OPEN state using host mytstrac01.localdomain and database instance cdbtst1
 taking target database out of backup mode using instance cdbtst1
 restarting target database with backup mode disabled
 re-opening pluggable databases
-opening PRDPDB
-actual state of cdbtst1 on host gct-oradb-tst-rac01.localdomain is:OPEN
+no pluggable databases to re-open
+actual state of cdbtst1 on host mytstrac01.localdomain is:OPEN
 ============
 complete
-
 
 ```
