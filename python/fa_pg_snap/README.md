@@ -13,14 +13,14 @@ If replication is set up for the source protection group, the snapshot can be re
 
 # Arguments:
 
--s source protection group (required unless `source_protection_group` is set in the JSON config file)\
--t target protection group (optional - may also be set with `target_protection_group` in the JSON config file)\
--n the snapshot name.  If this does not exist - it will create it.  If it already exists, it will use the existing snapshot to sync to the target. (required)\
--f JSON file with FQDN and API token to connect to the Flash Arrays (optional - if omitted, connection details are read from environment variables, see Notes)\
--r replicate the snapshot to the targets specified in the source protection group (optional - may also be set with `"replicate": "True"` in the JSON config file)\
--o output file with the names of the snapshot volumes (optional)\
--i ignore tag (optional - see below)\
--x execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you what it would do.  This may prove useful to make sure you have all the settings right before you overwrite a target protection group.
+-s  source protection group (required unless `source_protection_group` is set in the JSON config file)\
+-t  target protection group (optional - may also be set with `target_protection_group` in the JSON config file)\
+-n  the snapshot name.  If this does not exist - it will create it.  If it already exists, it will use the existing snapshot to sync to the target. (required)\
+-f  JSON file with FQDN and API token to connect to the Flash Arrays (optional - if omitted, connection details are read from environment variables, see Notes)\
+-r  replicate the snapshot to the targets specified in the source protection group (optional - may also be set with `"replicate": "True"` in the JSON config file)\
+-o  output file with the names of the snapshot volumes (optional)\
+-i  ignore tag (optional - see below)\
+-x  execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you what it would do.  This may prove useful to make sure you have all the settings right before you overwrite a target protection group.
 
 # JSON config file
 
