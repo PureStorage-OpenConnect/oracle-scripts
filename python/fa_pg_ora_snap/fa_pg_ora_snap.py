@@ -1,7 +1,7 @@
 #
 # Python script to snapshot an Oracle database and optionally re-sync to a target PG
 #
-# Graham Thornton - May 2026
+# Graham Thornton - May 2026, Oct 2026
 # gthornton@everpuredata.com
 #
 # requires py_pure_client
@@ -10,7 +10,7 @@
 # requires fa_pg_snap
 #
 # usage:
-# python fa_pg_ora_snap.py -s gct-oradb-vvol-ac::pgroup-auto -t gct-oradb-vvol-pg-swingtarget -n gct1 -f config.json -x
+# python fa_pg_ora_snap.py -s gct-oradb-vvol-ac::pgroup-auto -t gct-oradb-vvol-pg-swingtarget -n gct1 -j config.json -x
 #
 
 import os
@@ -18,12 +18,7 @@ import re
 import datetime
 import argparse
 import oracledb
-
-import warnings
-warnings.filterwarnings(action='ignore')
-
-import urllib3
-
+import subprocess
 
 #
 # this script builds upon fa_pg_snap
@@ -31,16 +26,12 @@ import urllib3
 import fa_pg_snap
 
 # global variables
-from fa_pg_snap import not_defined, HALT, NOHALT 
+from fa_pg_snap import not_defined, HALT, NOHALT
 version = "1.9.0"
 
 lst_db_parameters = ['control_files','db_recovery_file_dest','db_recovery_file_dest_size','enable_pluggable_database']
 
 lst_tag_keys = ['db_name','db_id','db_time','db_unique_name','db_role','db_threads','db_open_mode','archivelog_mode','flashback_mode','platform_name','encrypted_tablespaces','version','backup_mode','control_files','db_recovery_file_dest','db_recovery_file_dest_size','enable_pluggable_database','asm_disk_groups','open_pdbs']
-
-
-# disable the HTTPS warnings
-urllib3.disable_warnings()
 
 # store values read from the database and then written as tags
 dictDBParams={}
@@ -51,6 +42,35 @@ dictDBParams={}
 # ORACLE
 
 ##############################################
+
+#
+# get the oracle home of the specified sid from the oratab file
+#
+def fQueryOraHome(ora_tab_file, my_sid):
+
+    with open(ora_tab_file) as f:
+
+        for line in f:
+
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            key, sep, rest = line.partition(":")
+            if key == my_sid:
+                ora_home, sep, start_flag = rest.rpartition(":")
+                return ora_home
+    return not_defined
+
+#
+# query the ASM instance on this host
+#
+def fQueryASM( ):
+
+    cmd = "ps -ef | grep -E '[a]sm_pmon_' | awk -F'_' '{print $NF}'"
+    result = subprocess.run( cmd, shell=True, capture_output=True, text=True )
+    return result.stdout.strip() or not_defined
+
 
 #
 # connect to an Oracle database and return the connection handle
@@ -96,7 +116,7 @@ def fSQLExecuteList( myconn, mystmt ):
         list_of_lists = [list(row) for row in rows]
 
         # add the result to the result set
-        for row in list_of_lists: 
+        for row in list_of_lists:
             lst_result.append( str(row[0]) )
 
     except oracledb.Error as e:
@@ -113,7 +133,7 @@ def fSQLExecute( myconn, mystmt ):
     my_list=fSQLExecuteList( myconn, mystmt )
 
     try:
-     
+
         return re.sub(r'[\n\r]+', ',', ",".join(my_list))
 
     except:
@@ -154,10 +174,10 @@ def fOraLocalExecute( sid, home, cs, lst_mystmts ):
         process.write( "spool off\n" )
         process.write( "exit\n" )
 
-        rc = process.close() 
+        rc = process.close()
 
         if( rc is not None ):
-            print( f'call to SQL*Plus returned {rc}' ) 
+            print( f'call to SQL*Plus returned {rc}' )
 
         # read the output file
         with open(tmp_output_file, 'r') as file:
@@ -280,7 +300,7 @@ def mOraStartPluggable( ora_sid, ora_home, ora_target_mode ):
     for open_pdb in open_pdbs.split(','):
 
         print( 'opening '+str(open_pdb))
-        cmd_list.append( "alter pluggable database "+str(open_pdb)+" open instances=all;" )
+        cmd_list.append( "alter pluggable database "+str(open_pdb)+" open;" )
 
         if( local_listener != "" ):
             cmd_list.append( "alter session set container="+str(open_pdb)+";" )
@@ -329,8 +349,8 @@ def mOraResetTargetSPFILE( ora_sid, ora_home ):
             print( cmd )
 
     # see if db_unique_name is defined - if so add it to the list of parameters to reset in the target spfile file
-    db_unique_name = fa_pg_snap.dictArgs.get( 'db_unique_name', not_defined ) 
-    if( db_unique_name != not_defined ): 
+    db_unique_name = fa_pg_snap.dictArgs.get( 'db_unique_name', not_defined )
+    if( db_unique_name != not_defined ):
         cmd = "alter system set db_unique_name="+db_unique_name+" sid='*' scope=spfile;"
         cmd_list.append( cmd )
         print( cmd )
@@ -482,7 +502,7 @@ def fOraSourceConnect( my_source_snapshot_exists, my_backup_mode ):
             print( '============' )
             print( 'source db begin backup mode' )
             mSQLExecute( my_db_conn, "alter database begin backup" )
-    
+
 
     return my_db_conn
 
@@ -496,15 +516,15 @@ def doMain( ):
 
     # parse the command line args
     parser = argparse.ArgumentParser(
-                    prog='fa_pg_ora_snap ', usage='%(prog)s [-s -t -n -f -i -r -b -o -x -h]',
+                    prog='fa_pg_ora_snap ', usage='%(prog)s [ options ]',
                     description='snapshot an oracle database on a Everpure Flash Array',
                     epilog='coded by Graham Thornton - gthornton@everpuredata.com')
 
     parser.add_argument('-s','--source_protection_group', help='source pg', required=False)
     parser.add_argument('-t','--target_protection_group', help='target pg', required=False)
     parser.add_argument('-n','--snapshot_name', help='name of the snapshot', required=True)
-    parser.add_argument('-o','--open_mode', help='requested state of the target instance (down, nomount, mount, open)', required=False)
-    parser.add_argument('-f','--config_file', help='json document of config options', required=True)
+    parser.add_argument('-o','--open_mode', help='requested state of the target instance', choices=['down','nomount','mount','open'], type=str.lower, required=False)
+    parser.add_argument('-j','--config_file', help='json document of config options', required=True)
     parser.add_argument('-i','--ignore_match', action='store_true', help='ignore tag-matching')
     parser.add_argument('-r','--replicate', action='store_true', help='replicate the snapshot')
     parser.add_argument('-b','--backup_mode', action='store_true', help='put source database into backup mode')
@@ -522,12 +542,12 @@ def doMain( ):
     #
     # read the config file
     #
-    if( args.config_file != None ): fa_pg_snap.dictArgs = fa_pg_snap.fReadConnectionJSON( args.config_file )
+    fa_pg_snap.dictArgs = fa_pg_snap.fReadConnectionJSON( args.config_file )
 
     # fa variables for source array
-    src_flash_array = fa_pg_snap.dictArgs.get( "src_flash_array_host", fa_pg_snap.dictArgs.get( "flash_array_host", os.environ.get('FA_HOST')))
-    src_flash_array_api_token = fa_pg_snap.dictArgs.get( "src_flash_array_api_token", fa_pg_snap.dictArgs.get( "flash_array_api_token", os.environ.get('API_TOKEN')))
-    flash_array_api_version = fa_pg_snap.dictArgs.get( "flash_array_api_version" )    
+    src_flash_array = fa_pg_snap.dictArgs.get( "src_flash_array_host", fa_pg_snap.dictArgs.get( "flash_array_host", os.environ.get('PUREFA_URL')))
+    src_flash_array_api_token = fa_pg_snap.dictArgs.get( "src_flash_array_api_token", fa_pg_snap.dictArgs.get( "flash_array_api_token", os.environ.get('PUREFA_API')))
+    flash_array_api_version = fa_pg_snap.dictArgs.get( "flash_array_api_version" )
 
     if( src_flash_array==None or src_flash_array_api_token==None ):
         fa_pg_snap.mQuit( 'src_flash_array_host and src_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -549,13 +569,13 @@ def doMain( ):
     #
     # check if we want the snapshot to replicate
     #
-    bReplicate = ( args.replicate or fa_pg_snap.dictArgs.get( "replicate" )=="True" )
+    bReplicate = ( args.replicate or fa_pg_snap.fBool( fa_pg_snap.dictArgs.get( "replicate" )))
 
     if( bReplicate ):
 
         # fa variables for target array
-        tgt_flash_array = fa_pg_snap.dictArgs.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
-        tgt_flash_array_api_token = fa_pg_snap.dictArgs.get( "tgt_flash_array_api_token", os.environ.get('API_TOKEN_TGT') )
+        tgt_flash_array = fa_pg_snap.dictArgs.get( "tgt_flash_array_host", os.environ.get('PUREFA_TARGET_URL') )
+        tgt_flash_array_api_token = fa_pg_snap.dictArgs.get( "tgt_flash_array_api_token", os.environ.get('PUREFA_TARGET_API') )
 
         if( tgt_flash_array==None or tgt_flash_array_api_token==None ):
             fa_pg_snap.mQuit( 'tgt_flash_array_host and tgt_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -566,9 +586,19 @@ def doMain( ):
         myArrayTgt = fa_pg_snap.fFAConnect( tgt_flash_array, tgt_flash_array_api_token, flash_array_api_version )
         tgt_array_name = fa_pg_snap.fFAQueryName( myArrayTgt )
 
+        #
+        # check the source PG is set for replication
+        #
+        my_protection_group=[caSourceProtectionGroup]
+
+        response = myArraySrc.get_protection_groups( names=my_protection_group )
+        for item in response.items:
+            #print ( item.target_count )
+            if( item.target_count==0 ): fa_pg_snap.mQuit( 'source protection group is not set for replication' )
+
     else:
 
-        myArrayTgt = myArraySrc    
+        myArrayTgt = myArraySrc
         tgt_array_name = src_array_name
 
 
@@ -581,40 +611,14 @@ def doMain( ):
     print( f'source protection group:{caSourceProtectionGroup}' )
     print( f'target protection group:{caTargetProtectionGroup}' )
 
-    #
-    # oracle environmental variables
-    #
-    ora_sid = fa_pg_snap.dictArgs.get( "oracle_sid", not_defined )
-    ora_home = fa_pg_snap.dictArgs.get( "oracle_home", not_defined )
-
-    if( ora_sid == not_defined or ora_home == not_defined ):
-        fa_pg_snap.mQuit( "oracle home and/or sid not set" )
-
-    print( '============' )
-    print( "setting local oracle sid and home" )
-    os.environ["ORACLE_SID"]=ora_sid
-    os.environ["ORACLE_HOME"]=ora_home
-
-
-    #
-    # get oracle target mode
-    #
-    ora_target_mode = fa_pg_snap.fNotNone( args.open_mode, fa_pg_snap.dictArgs.get( "oracle_target_mode", "DOWN" ))
-    ora_target_mode = ora_target_mode.upper()
-
-    if( ora_target_mode not in ['OPEN','MOUNT','NOMOUNT','DOWN']):
-        fa_pg_snap.mQuit( "target database state must be one of OPEN, MOUNT, NOMOUNT, DOWN" )
 
 
     #
     # check if we want oracle backup mode used
     #
-    bBackupMode = ( args.backup_mode or fa_pg_snap.dictArgs.get( "ora_backup_mode" )=="True" )
+    bBackupMode = ( args.backup_mode or fa_pg_snap.fBool( fa_pg_snap.dictArgs.get( "ora_backup_mode" )))
 
 
-    # get the target ASM instance details
-    asm_sid = fa_pg_snap.dictArgs.get( "asm_sid", not_defined )
-    asm_home = fa_pg_snap.dictArgs.get( "asm_home", not_defined )
 
 
     # connect to the source, read v$parameter and put it into backup mode
@@ -626,33 +630,36 @@ def doMain( ):
     # if safety lock engaged this will return a null string
     #
 
-    if( not bSourceSnapshotExists ): 
+    try:
 
-        my_tags = [
-            ( tag_key, str( dictDBParams.get( tag_key, not_defined )) )
-            for tag_key in lst_tag_keys
-        ]
+        if( not bSourceSnapshotExists ):
 
-        caSnapshotName=fa_pg_snap.fCreateSnapshot( 
-            myArraySrc, 
-            args.execute_lock, 
-            caSnapshotName, 
-            caSourceProtectionGroup, 
-            bReplicate, 
-            my_tags 
-        )
+            my_tags = [
+                ( tag_key, str( dictDBParams.get( tag_key, not_defined )) )
+                for tag_key in lst_tag_keys
+            ]
 
+            caSnapshotName=fa_pg_snap.fCreateSnapshot(
+                myArraySrc,
+                args.execute_lock,
+                caSnapshotName,
+                caSourceProtectionGroup,
+                bReplicate,
+                my_tags
+            )
 
     #
     # come out of backup mode
     # if we have a source db connection, we made a snapshot and we wanted backup mode
     #
 
-    if ( not bSourceSnapshotExists and dbSourceConnection != None and bBackupMode ):
+    finally:
 
-        print( '============' )
-        print( 'source db end backup mode' )
-        mSQLExecute( dbSourceConnection, "alter database end backup" )
+        if ( not bSourceSnapshotExists and dbSourceConnection != None and bBackupMode ):
+
+            print( '============' )
+            print( 'source db end backup mode' )
+            mSQLExecute( dbSourceConnection, "alter database end backup" )
 
     #
     # query the volumes of the source pg
@@ -670,7 +677,7 @@ def doMain( ):
 
         lst_tags = fa_pg_snap.fQuerySnapshotTags( myArraySrc, caSourceProtectionGroup, caSnapshotName )
 
-        for tag in lst_tags: 
+        for tag in lst_tags:
             #my_namespace = fa_pg_snap.snapshot_tag( tag.namespace )
 
             print( f'{tag.key} {tag.value}' )
@@ -710,10 +717,48 @@ def doMain( ):
 
 
     #
+    # oracle environmental variables
+    #
+    ora_sid = fa_pg_snap.dictArgs.get( "oracle_sid", not_defined )
+    ora_home = fa_pg_snap.dictArgs.get( "oracle_home", fQueryOraHome('/etc/oratab', ora_sid ))
+
+    if( ora_home == not_defined or ora_sid == not_defined ):
+        fa_pg_snap.mQuit( "oracle home or oracle sid not set" )
+
+    print( '============' )
+    print( "setting local oracle home and sid variables" )
+    os.environ["ORACLE_HOME"]=ora_home
+    os.environ["ORACLE_SID"]=ora_sid
+
+
+
+
+    #
+    # get oracle target mode
+    #
+    ora_target_mode = fa_pg_snap.fNotNone( args.open_mode, fa_pg_snap.dictArgs.get( "oracle_target_mode", "DOWN" ))
+    ora_target_mode = ora_target_mode.upper()
+
+    if( ora_target_mode not in ['OPEN','MOUNT','NOMOUNT','DOWN']):
+        fa_pg_snap.mQuit( "target database state must be one of OPEN, MOUNT, NOMOUNT, DOWN" )
+
+
+
+    # get the target ASM instance details
+    asm_sid = fa_pg_snap.dictArgs.get( "asm_sid", fQueryASM( ))
+    asm_home = fa_pg_snap.dictArgs.get( "asm_home", fQueryOraHome('/etc/oratab', asm_sid ))
+
+    if( asm_home == not_defined or asm_sid == not_defined ):
+        fa_pg_snap.mQuit( "grid home or ASM sid not set" )
+
+
+
+    #
     # determine if target database is running
     #
     print( '============'  )
     print( f'determining if target instance {ora_sid} is running' )
+    print( f'using oracle home:{ora_home}' )
 
     caTargetOraStatus = fQueryTargetInstanceRunning( ora_sid, ora_home )
 
@@ -724,22 +769,21 @@ def doMain( ):
     #
     # call ASM to determine what diskgroups are online
     #
-    if( asm_sid != not_defined and asm_home != not_defined ):
+    print( '============'  )
+    print( 'determining if target ASM diskgroups are mounted' )
+    print( f'using ASM instance {asm_sid} with grid home:{asm_home}' )
 
-        print( '============'  )
-        print( "determining if target ASM diskgroups are mounted" )
+    source_asm_dg = dictDBParams.get( "asm_disk_groups", "" )
 
-        source_asm_dg = dictDBParams.get( "asm_disk_groups", "" )
+    if( source_asm_dg in ( "", not_defined ) ):
 
-        if( source_asm_dg in ( "", not_defined ) ):
+        fa_pg_snap.mQuit( 'no ASM diskgroups found to mount!' )
 
-            print( 'no ASM diskgroups to mount' )
+    else:
 
-        else:
+        lstMountedDGs = fQueryASMDGMounted( asm_sid, asm_home, source_asm_dg.split(',') )
 
-            lstMountedDGs = fQueryASMDGMounted( asm_sid, asm_home, source_asm_dg.split(',') )
-
-            if( len( lstMountedDGs )>0 ): fa_pg_snap.mQuit( str( len( lstMountedDGs ))+' ASM diskgroup(s) are still mounted on the target' )
+        if( len( lstMountedDGs )>0 ): fa_pg_snap.mQuit( str( len( lstMountedDGs ))+' ASM diskgroup(s) are still mounted on the target' )
 
     #
     # query the volumes of the target pg
@@ -759,7 +803,7 @@ def doMain( ):
     # for each target volume get the capacity and the source volume id
     # this call populates fa_pg_snap.dictTargetVols id:source_map|vol_name|size
     #
-    fa_pg_snap.mQueryTargetVolumeDetails( myArrayTgt, args.ignore_match, lstTargetVols )
+    fa_pg_snap.mQueryTargetVolumeDetails( myArrayTgt, args.ignore_match, lstTargetVols, lstExcludedVols )
 
 
     #
@@ -767,7 +811,7 @@ def doMain( ):
     # we process the dictSource looking for volumes where the tmap is not set
     # we then look for a match in dictTarget
     # when found we update dictSource tmap
-    # 
+    #
     nUnmatched = fa_pg_snap.fCreateVolumeMap( )
 
     if( nUnmatched>0 ):
@@ -876,7 +920,4 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
-
-
-
 
