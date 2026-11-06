@@ -3,7 +3,7 @@
 The script fa_pg_ora_snap.rac.py provides for taking a snapshot clone of an Oracle database using ASM, with volumes in a protection group on an Everpure Flash Array.\
 This script can be executed from a remote Linux scripting host.  The source database is accessed with python-oracledb, and the target hosts are accessed over SSH.  It can clone both single instance and RAC clustered databases.\
 The code can also clone the source database to a target database server or RAC cluster.  The code will check whether the target database and ASM diskgroups are offline before execution.  If they are still online, the code will refuse to execute.\
-It will also optionally copy that snapshot to a target protection group.  In this case the target protection group must have an equal or greater number of volumes of equal or larger size than the source.\
+It will also optionally copy that snapshot to a target protection group.  In this case the target protection group must have an equal or greater number of volumes of equal size than the source.\
 The script can also copy an existing snapshot of a source protection group to a target protection group.  In this case the database settings are read back from the tags on the snapshot.\
 If replication is set up for the source protection group, the snapshot can be replicated to a second Flash Array.
 
@@ -21,16 +21,16 @@ If replication is set up for the source protection group, the snapshot can be re
 
 # Arguments:
 
--s source protection group (required unless `source_protection_group` or `src_protection_group` is set in the JSON config file)\
--t target protection group (optional - may also be set with `target_protection_group` or `tgt_protection_group` in the JSON config file)\
--n the snapshot name.  If this does not exist - it will create it.  If it already exists, it will use the existing snapshot to sync to the target, reading the database settings from the snapshot tags. (required)\
--f JSON file with FQDN and API token to connect to the Flash Arrays, plus the database and target host settings (required)\
--r replicate the snapshot to the targets specified in the source protection group (optional)\
--o startup mode of the target database (OPEN, MOUNT, NOMOUNT or DOWN - case insensitive, defaults to DOWN)\
--b use oracle backup mode (optional - defaults to no)\
--i ignore tag (override established source/target volume pairing for cloning - see fa_pg_ora_snap.py for more details)\
--d debug level 0-4 (optional - defaults to 0)\
--x execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you what it would do.  This may prove useful to make sure you have all the settings right before you overwrite a target protection group.\
+-s  source protection group (required unless `source_protection_group` or `src_protection_group` is set in the JSON config file)\
+-t  target protection group (optional - may also be set with `target_protection_group` or `tgt_protection_group` in the JSON config file)\
+-n  the snapshot name.  If this does not exist - it will create it.  If it already exists, it will use the existing snapshot to sync to the target, reading the database settings from the snapshot tags. (required)\
+-j  JSON file with FQDN and API token to connect to the Flash Arrays, plus the database and target host settings (required)\
+-r  replicate the snapshot to the targets specified in the source protection group (optional)\
+-o  startup mode of the target database (OPEN, MOUNT, NOMOUNT or DOWN - case insensitive, defaults to DOWN)\
+-b  use oracle backup mode (optional - defaults to no)\
+-i  ignore tag (override established source/target volume pairing for cloning - see fa_pg_ora_snap.py for more details)\
+-d  debug level 0-4 (optional - defaults to 0)\
+-x  execute lock - if this is NOT set, no destructive actions will be taken.  Instead, the script will simply tell you what it would do.  This may prove useful to make sure you have all the settings right before you overwrite a target protection group.\
 Note - many database parameters must be specified in the JSON file - see below:
 
 # JSON file settings:
@@ -79,7 +79,7 @@ Unlike fa_pg_ora_snap.py, this code can execute on a remote scripting host.\
 The ASM instance on each target host is discovered automatically over SSH - it does not need to be configured.\
 This code requires password-less sudo privileges to execute the rescan_asmlib.sh, rescan_afd.sh or rescan_udev.sh script.\
 If replication is NOT specified, both the source and target protection groups are assumed to be on the source Flash Array, and the target Flash Array is ignored.\
-If the JSON file does not specify Flash Array authentication credentials, the code will try the OS variables FA_HOST/API_TOKEN (source) and FA_HOST_TGT/API_TOKEN_TGT (target).\
+If the JSON file does not specify Flash Array authentication credentials, the code will try the OS variables PUREFA_URL/PUREFA_API (source) and PUREFA_TARGET_URL/PUREFA_TARGET_API (target).\
 A JSON file must be specified to provide the authentication details to the source database and target server(s).
 
 # Tagging the database snapshot
@@ -92,35 +92,34 @@ When an existing snapshot is used, these tags are read back and used to reset th
 
 # A Worked Example
 
-In the example below, the database PRDCDB is running on a pair of Linux servers.  It has its ASM diskgroups in an Everpure Flash Array protection group called gct-oradb-rac-prd-data-pg\
-The code will place the source database into backup mode, snapshot that protection group, and then overwrite corresponding volumes on Linux RAC cluster gct-oradb-tst-rac01 and gct-oradb-tst-rac02.  The code will then mount the cloned ASM diskgroups on the target RAC cluster, mount the cloned database and open it read-write.\
+In the example below, the database PRDCDB is running on a pair of Linux servers.  It has its ASM diskgroups in an Everpure Flash Array protection group called oradb-rac-prd-data-pg\
+The code will place the source database into backup mode, snapshot that protection group, and then overwrite corresponding volumes on Linux RAC cluster oradb-tst-rac01.localdomain and oradb-tst-rac02.localdomain.  The code will then mount the cloned ASM diskgroups on the target RAC cluster, mount the cloned database and open it read-write.\
 All of this is executed remotely from a scripting host.\
-(Output captured with an earlier version - message formatting differs slightly in the current version.)
 
 
 ```
-[oracle@gct-oradb-demo-tst01 py]$ python fa_pg_ora_snap.rac.py -f json/clone_rac_database.json -n jun021703 -r -x -b -o open
+[oracle@oradb-tst01 wip]$ python fa_pg_ora_snap.rac.py -j json/prdrac_2_tstrac.json -n nov051610 -r -b -o open -x
 ============
-fa_pg_ora_snap.rac.py 1.9.0 started at 2026-06-02 17:03:40.073971
+fa_pg_ora_snap.rac.py 2.0.0 started at 2026-11-05 16:10:13.783598
 ============
-connecting to Flash Array:source_flash_array.localdomain API Version:2.27
+connecting to Flash Array:array03.example.com API Version:2.44
 connected
 ============
-connecting to Flash Array:target_flash_array.localdomain API Version:2.27
+connecting to Flash Array:array02.example.com API Version:2.44
 connected
 ============
-determining if snapshot jun021703 exists for protection group:gct-oradb-rac-prd-data-pg
-source protection group:gct-oradb-rac-prd-data-pg
-target protection group:gct-oradb-rac-tst-data-pg
+determining if snapshot nov051610 exists for protection group:oradb-rac-prd-data-pg
+source protection group:oradb-rac-prd-data-pg
+target protection group:oradb-rac-tst-data-pg
 ============
-connecting to source database:mydatabasehost:1521/prdcdb
+connecting to source database:oradb-prd-rac02.localdomain:1521/prdcdb
 use backup mode:True
 ============
 reading source database settings
 asm diskgroups: DATA
 database name: PRDCDB
-database id: 3749697885
-database time: 2026/06/02 19:03:40
+database id: 1000000001
+database time: 2026/11/05 18:10:14
 database open mode: READ WRITE
 database role: PRIMARY
 database threads: 2
@@ -134,105 +133,129 @@ db_recovery_file_dest: +DATA
 db_recovery_file_dest_size: 13979615232
 enable_pluggable_database: TRUE
 identifying the open pluggable databases
-no open pluggable databases found
+open pdbs: PRDPDB
 ============
 source db begin backup mode
 ============
-creating snapshot for gct-oradb-rac-prd-data-pg
+creating snapshot for oradb-rac-prd-data-pg
 ============
 source db end backup mode
 ============
-querying the volumes for protection group:gct-oradb-rac-prd-data-pg on array source_flash_array
-gct-oradb-rac-prd-data00
-gct-oradb-rac-prd-data01
-gct-oradb-rac-prd-data02
+querying the volumes for protection group:oradb-rac-prd-data-pg on array array03
+oradb-rac-prd-data00
+oradb-rac-prd-data01
+oradb-rac-prd-data02
 ============
 excluded volumes
 ============
-listing the volumes for snapshot:jun021703
-name:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 size:100.0 GB
-name:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 size:100.0 GB
-name:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 size:100.0 GB
+listing the volumes for snapshot:nov051610
+name:array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data00 sz:100.0 GB
+name:array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data01 sz:100.0 GB
+name:array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data02 sz:100.0 GB
 ============
 will use ssh key to connect as grid
 will use ssh key to connect as oracle
 ============
-determining ASM instance on host mytstrac01.localdomain
+determining ASM instance on host oradb-tst-rac01.localdomain
 ASM instance on this host is +ASM1
-checking if target database cdbtst is configured on host mytstrac01.localdomain
+checking if target database cdbtst is configured on host oradb-tst-rac01.localdomain
 checking if target database cdbtst is running on any host
 ============
-checking target ASM diskgroups are unmounted DATA on host mytstrac01.localdomain
+checking target ASM diskgroups are unmounted DATA on host oradb-tst-rac01.localdomain
 ============
-determining ASM instance on host mytstrac02.localdomain
+determining ASM instance on host oradb-tst-rac02.localdomain
 ASM instance on this host is +ASM2
-checking if target database cdbtst is configured on host mytstrac02.localdomain
+checking if target database cdbtst is configured on host oradb-tst-rac02.localdomain
 checking if target database cdbtst is running on any host
 ============
-checking target ASM diskgroups are unmounted DATA on host mytstrac02.localdomain
+checking target ASM diskgroups are unmounted DATA on host oradb-tst-rac02.localdomain
 ============
-querying the volumes for protection group:gct-oradb-rac-tst-data-pg on array target_flash_array.localdomain
-gct-oradb-rac-tst-data00
-gct-oradb-rac-tst-data01
-gct-oradb-rac-tst-data02
+querying the volumes for protection group:oradb-rac-tst-data-pg on array array02
+oradb-rac-tst-data00
+oradb-rac-tst-data01
+oradb-rac-tst-data02
 ============
 querying target volume details
-name:gct-oradb-rac-tst-data00 id:c16f124e-ac41-74da-77e7-932cc21092b9 size:100.0
-   is a target for source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 size:100.0 GB
-name:gct-oradb-rac-tst-data01 id:ed666ee9-fb96-4ff9-7696-2ecde5492187 size:100.0
-   is a target for source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 size:100.0 GB
-name:gct-oradb-rac-tst-data02 id:3e490b40-7d8b-e9c7-0c27-7a0dad0c8bcd size:100.0
-   is a target for source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 size:100.0 GB
+nm:oradb-rac-tst-data00
+  id:bbbbbbbb-0000-0000-0000-000000000002
+  is a target for array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data00
+  sz:100.0 GB
+nm:oradb-rac-tst-data01
+  id:bbbbbbbb-0000-0000-0000-000000000003
+  is a target for array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data01
+  sz:100.0 GB
+nm:oradb-rac-tst-data02
+  id:bbbbbbbb-0000-0000-0000-000000000004
+  is a target for array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data02
+  sz:100.0 GB
 ============
 determining volume mapping
-nm:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 src id:7ca9b19a-a260-23b0-032f-590897297e0e map:0 sz:100.0
+nm:array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data00
+  src id:bbbbbbbb-0000-0000-0000-000000000005 map:0
+  sz:100.0 GB
   checking for tag matched volume
-    volume source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 will be synced to gct-oradb-rac-tst-data00
-nm:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 src id:a6293a28-a82f-60ec-df1c-d7f6000d858d map:0 sz:100.0
+  will be synced to oradb-rac-tst-data00
+nm:array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data01
+  src id:bbbbbbbb-0000-0000-0000-000000000006 map:0
+  sz:100.0 GB
   checking for tag matched volume
-    volume source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 will be synced to gct-oradb-rac-tst-data01
-nm:source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 src id:17dfedda-e53f-cdcb-0754-23956596aec2 map:0 sz:100.0
+  will be synced to oradb-rac-tst-data01
+nm:array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data02
+  src id:bbbbbbbb-0000-0000-0000-000000000007 map:0
+  sz:100.0 GB
   checking for tag matched volume
-    volume source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 will be synced to gct-oradb-rac-tst-data02
+  will be synced to oradb-rac-tst-data02
 ============
 waiting on snapshot replication
+.
 replication complete
 ============
 mapping the volumes
-source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data00 will be syncd to gct-oradb-rac-tst-data00
-source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data01 will be syncd to gct-oradb-rac-tst-data01
-source_flash_array:gct-oradb-rac-prd-data-pg.jun021703.gct-oradb-rac-prd-data02 will be syncd to gct-oradb-rac-tst-data02
+array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data00
+  src key:bbbbbbbb-0000-0000-0000-000000000005
+  map:bbbbbbbb-0000-0000-0000-000000000002
+  will be syncd to oradb-rac-tst-data00
+array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data01
+  src key:bbbbbbbb-0000-0000-0000-000000000006
+  map:bbbbbbbb-0000-0000-0000-000000000003
+  will be syncd to oradb-rac-tst-data01
+array03:oradb-rac-prd-data-pg.nov051610.oradb-rac-prd-data02
+  src key:bbbbbbbb-0000-0000-0000-000000000007
+  map:bbbbbbbb-0000-0000-0000-000000000004
+  will be syncd to oradb-rac-tst-data02
 ============
-rescaning the SCSI bus on target mytstrac01.localdomain
-rescaning the SCSI bus on target mytstrac02.localdomain
+rescaning the SCSI bus on target oradb-tst-rac01.localdomain
+rescaning the SCSI bus on target oradb-tst-rac02.localdomain
 ============
-mounting ASM diskgroups on host mytstrac01.localdomain using ASM instance +ASM1
-mounting ASM diskgroups on host mytstrac02.localdomain using ASM instance +ASM2
+mounting ASM diskgroups on host oradb-tst-rac01.localdomain using ASM instance +ASM1
+mounting ASM diskgroups on host oradb-tst-rac02.localdomain using ASM instance +ASM2
 ============
-checking target ASM diskgroups are mounted DATA on host mytstrac01.localdomain
-target ASM diskgroup DATA is mounted on node mytstrac01.localdomain
+checking target ASM diskgroups are mounted DATA on host oradb-tst-rac01.localdomain
+target ASM diskgroup DATA is mounted on node 2
+target ASM diskgroup DATA is mounted on node 1
 ============
-checking target ASM diskgroups are mounted DATA on mytstrac02.localdomain
-target ASM diskgroup DATA is mounted on node mytstrac02.localdomain
+checking target ASM diskgroups are mounted DATA on host oradb-tst-rac02.localdomain
+target ASM diskgroup DATA is mounted on node 1
+target ASM diskgroup DATA is mounted on node 2
 ============
 requested state of cdbtst is:OPEN
-starting database cdbtst to a NOMOUNT state using host mytstrac01.localdomain and database instance cdbtst1
+starting database cdbtst to a NOMOUNT state using host oradb-tst-rac01.localdomain and database instance cdbtst1
 ============
-resetting the target SPFILE on host mytstrac01.localdomain using instance cdbtst1
+resetting the target SPFILE on host oradb-tst-rac01.localdomain using instance cdbtst1
 alter system set db_name='PRDCDB' sid='*' scope=spfile;
 alter system set control_files='+DATA/PRDCDB/CONTROLFILE/current.308.1233917149','+DATA/PRDCDB/CONTROLFILE/current.307.1233917149' sid='*' scope=spfile;
 alter system set db_recovery_file_dest='+DATA' sid='*' scope=spfile;
 alter system set db_recovery_file_dest_size=13979615232 sid='*' scope=spfile;
 alter system set enable_pluggable_database=TRUE sid='*' scope=spfile;
-shutting down database cdbtst using host mytstrac01.localdomain and database instance cdbtst1
+shutting down database cdbtst using host oradb-tst-rac01.localdomain and database instance cdbtst1
 ============
 restarting target database
-starting database cdbtst to a OPEN state using host mytstrac01.localdomain and database instance cdbtst1
+starting database cdbtst to a OPEN state using host oradb-tst-rac01.localdomain and database instance cdbtst1
 taking target database out of backup mode using instance cdbtst1
 restarting target database with backup mode disabled
 re-opening pluggable databases
-no pluggable databases to re-open
-actual state of cdbtst1 on host mytstrac01.localdomain is:OPEN
+opening PRDPDB
+actual state of cdbtst1 on host oradb-tst-rac01.localdomain is:OPEN
 ============
 complete
 

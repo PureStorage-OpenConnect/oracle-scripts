@@ -2,7 +2,7 @@
 # Python script to snapshot multiple Oracle databases and optionally re-sync to a target PG
 # this version runs on a remote host using ssh access to the source and target
 #
-# Graham Thornton - Jun 2026
+# Graham Thornton - Jun 2026, Oct 2026
 # gthornton@everpuredata.com
 #
 # from_private_key function copied from web - author unknown
@@ -30,11 +30,6 @@ from paramiko import RSAKey, Ed25519Key, ECDSAKey, DSSKey, PKey
 from cryptography.hazmat.primitives import serialization as crypto_serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, dsa, rsa, ec
 
-import warnings
-warnings.filterwarnings(action='ignore')
-
-import urllib3
-
 #
 # this script builds upon fa_pg_snap and fa_pg_ora_snap
 #
@@ -43,14 +38,10 @@ import fa_pg_ora_snap
 
 # global variables - shared constants come from fa_pg_snap so there is one source of truth
 from fa_pg_snap import not_defined, HALT, NOHALT
-version = "1.9.0"
-
-# disable the HTTPS warnings
-urllib3.disable_warnings()
+version = "2.0.0"
 
 # debug level - set with the -d command line option
 gnDebug=0
-
 
 def mDebug( my_debug, my_msg ):
     if( gnDebug>=my_debug ): print( f'{my_msg}' )
@@ -646,7 +637,7 @@ def mOraStartPluggableRemote( my_host, my_port, my_user, my_pass, my_key, my_sid
     for open_pdb in open_pdbs.split(','):
 
         print( 'opening '+str(open_pdb))
-        cmd_list.append( "alter pluggable database "+str(open_pdb)+" open;" )
+        cmd_list.append( "alter pluggable database "+str(open_pdb)+" open instances=all;" )
         cmd_list.append( "alter session set container="+str(open_pdb)+";" )
         if ( local_listener != not_defined ): 
             cmd_list.append( "alter system set local_listener='"+local_listener+"';" )
@@ -669,14 +660,14 @@ def doMain( ):
 
     # parse the command line args
     parser = argparse.ArgumentParser(
-                    prog='fa_pg_ora_snap.rac ', usage='%(prog)s [-s -t -n -f -i -r -b -o -x -h]',
+                    prog='fa_pg_ora_snap.rac ', usage='%(prog)s [ options ]',
                     description='snapshot a protection group of an oracle database on an Everpure Flash Array',
                     epilog='coded by Graham Thornton - gthornton@everpuredata.com')
 
     parser.add_argument('-s','--source_protection_group', help='source pg', required=False)
     parser.add_argument('-t','--target_protection_group', help='target pg', required=False)
     parser.add_argument('-n','--snapshot_name', help='name of the snapshot', required=True)
-    parser.add_argument('-f','--config_file', help='json document of config options', required=True)
+    parser.add_argument('-j','--config_file', help='json document of config options', required=True)
     parser.add_argument('-i','--ignore_match', action='store_true', help='ignore tag-matching')
     parser.add_argument('-r','--replicate', action='store_true', help='replicate snapshot')
     parser.add_argument('-b','--backup_mode', action='store_true', help='put source database into backup mode')
@@ -700,11 +691,11 @@ def doMain( ):
     #
     # read the config file
     #
-    if( args.config_file is not None ): fa_pg_snap.dictArgs = fa_pg_snap.fReadConnectionJSON( args.config_file )
+    fa_pg_snap.dictArgs = fa_pg_snap.fReadConnectionJSON( args.config_file )
 
     # fa variables for source array
-    src_flash_array = fa_pg_snap.dictArgs.get( "src_flash_array_host", fa_pg_snap.dictArgs.get( "flash_array_host", os.environ.get('FA_HOST')))
-    src_flash_array_api_token = fa_pg_snap.dictArgs.get( "src_flash_array_api_token", fa_pg_snap.dictArgs.get( "flash_array_api_token", os.environ.get('API_TOKEN')))
+    src_flash_array = fa_pg_snap.dictArgs.get( "src_flash_array_host", fa_pg_snap.dictArgs.get( "flash_array_host", os.environ.get('PUREFA_URL')))
+    src_flash_array_api_token = fa_pg_snap.dictArgs.get( "src_flash_array_api_token", fa_pg_snap.dictArgs.get( "flash_array_api_token", os.environ.get('PUREFA_TARGET_API')))
     flash_array_api_version = fa_pg_snap.dictArgs.get( "flash_array_api_version" )
 
     if( src_flash_array is None or src_flash_array_api_token is None ):
@@ -728,7 +719,7 @@ def doMain( ):
     #
     # check if we want the snapshot to replicate
     #
-    bReplicate = ( args.replicate or fa_pg_snap.dictArgs.get( "replicate" )=="True" )
+    bReplicate = ( args.replicate or fa_pg_snap.fBool( fa_pg_snap.dictArgs.get( "replicate" )))
 
     #
     # do we want to replicate this snapshot?
@@ -736,8 +727,8 @@ def doMain( ):
     if( bReplicate ):
 
         # fa variables for target array
-        tgt_flash_array = fa_pg_snap.dictArgs.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
-        tgt_flash_array_api_token = fa_pg_snap.dictArgs.get( "tgt_flash_array_api_token", os.environ.get('API_TOKEN_TGT') )
+        tgt_flash_array = fa_pg_snap.dictArgs.get( "tgt_flash_array_host", os.environ.get('PUREFA_TARGET_URL') )
+        tgt_flash_array_api_token = fa_pg_snap.dictArgs.get( "tgt_flash_array_api_token", os.environ.get('PUREFA_TARGET_API') )
 
         if( tgt_flash_array is None or tgt_flash_array_api_token is None ):
             fa_pg_snap.mQuit( 'tgt_flash_array_host and tgt_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -747,6 +738,16 @@ def doMain( ):
         #
         myArrayTgt = fa_pg_snap.fFAConnect( tgt_flash_array, tgt_flash_array_api_token, flash_array_api_version )
         tgt_array_name = fa_pg_snap.fFAQueryName( myArrayTgt )
+
+        #
+        # check the source PG is set for replication
+        #
+        my_protection_group=[caSourceProtectionGroup]
+
+        response = myArraySrc.get_protection_groups( names=my_protection_group )
+        for item in response.items:
+            #print ( item.target_count )
+            if( item.target_count==0 ): fa_pg_snap.mQuit( 'source protection group is not set for replication' )
 
     else:
 
@@ -775,7 +776,7 @@ def doMain( ):
     #
     # check if we want oracle backup mode used
     #
-    bBackupMode = ( args.backup_mode or fa_pg_snap.dictArgs.get( "ora_backup_mode" )=="True" )
+    bBackupMode = ( args.backup_mode or fa_pg_snap.fBool( fa_pg_snap.dictArgs.get( "ora_backup_mode" )))
 
 
     # connect to the source, read v$parameter and put it into backup mode
@@ -786,43 +787,41 @@ def doMain( ):
     # if safety lock engaged this will return a null string
     # 
 
-    if( not bSourceSnapshotExists ): 
+    try:
+        if( not bSourceSnapshotExists ): 
 
-        my_tags = [
-            ( tag_key, str( fa_pg_ora_snap.dictDBParams.get( tag_key, not_defined )) )
-            for tag_key in fa_pg_ora_snap.lst_tag_keys
-        ]
+            my_tags = [
+                ( tag_key, str( fa_pg_ora_snap.dictDBParams.get( tag_key, not_defined )) )
+                for tag_key in fa_pg_ora_snap.lst_tag_keys
+            ]
 
-        caSnapshotName=fa_pg_snap.fCreateSnapshot( myArraySrc, args.execute_lock, caSnapshotName, caSourceProtectionGroup, bReplicate, my_tags )
+            caSnapshotName=fa_pg_snap.fCreateSnapshot( myArraySrc, args.execute_lock, caSnapshotName, caSourceProtectionGroup, bReplicate, my_tags )
 
-    else:
+        else:
 
-        print( '============' )
-        print( 'reading tags from snapshot' )
+            print( '============' )
+            print( 'reading tags from snapshot' )
 
-        lst_tags = fa_pg_snap.fQuerySnapshotTags( myArraySrc, caSourceProtectionGroup, caSnapshotName )
+            lst_tags = fa_pg_snap.fQuerySnapshotTags( myArraySrc, caSourceProtectionGroup, caSnapshotName )
 
-        bReplicateTagFound = False
+            bReplicateTagFound = False
 
-        for tag in lst_tags:
+            for tag in lst_tags:
 
-            print( f'{tag.key} {tag.value}' )
+                print( f'{tag.key} {tag.value}' )
 
-            if( tag.key == "replicate" ):
+                if( tag.key == "replicate" ):
 
-                bReplicateTagFound = True
+                    bReplicateTagFound = True
 
-                if( bReplicate and str(bReplicate) != tag.value ):
+                    if( bReplicate and str(bReplicate) != tag.value ):
 
-                    fa_pg_snap.mQuit( "existing snapshot was not replicated" )
+                        fa_pg_snap.mQuit( "existing snapshot was not replicated" )
 
-            else:
-                #print( f'{tag} {tag.namespace} {tag.key} {tag.value}' )
-                fa_pg_ora_snap.dictDBParams.update({ tag.key:tag.value })
+                else:
+                    #print( f'{tag} {tag.namespace} {tag.key} {tag.value}' )
+                    fa_pg_ora_snap.dictDBParams.update({ tag.key:tag.value })
 
-        # an older snapshot may carry no replicate tag - we cannot verify it
-        if( bReplicate and not bReplicateTagFound ):
-            fa_pg_snap.mError( NOHALT, 0, 'existing snapshot has no replicate tag - cannot verify it was replicated' )
 
 
     #
@@ -830,11 +829,13 @@ def doMain( ):
     # if we have a source db connection, we made a snapshot and we wanted backup mode
     #
 
-    if ( not bSourceSnapshotExists and dbSourceConnection != None and bBackupMode ):
+    finally: 
 
-        print( '============' )
-        print( 'source db end backup mode' )
-        fa_pg_ora_snap.mSQLExecute( dbSourceConnection, "alter database end backup" )
+        if ( not bSourceSnapshotExists and dbSourceConnection != None and bBackupMode ):
+
+            print( '============' )
+            print( 'source db end backup mode' )
+            fa_pg_ora_snap.mSQLExecute( dbSourceConnection, "alter database end backup" )
 
 
 
@@ -997,7 +998,7 @@ def doMain( ):
     # for each target volume get the capacity and the source volume id
     # this call populates fa_pg_snap.dictTargetVols id:source_map|vol_name|size
     #
-    fa_pg_snap.mQueryTargetVolumeDetails( myArrayTgt, args.ignore_match, lstTargetVols )
+    fa_pg_snap.mQueryTargetVolumeDetails( myArrayTgt, args.ignore_match, lstTargetVols, lstExcludedVols )
 
 
     #
@@ -1177,5 +1178,7 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
+
+
 
 
