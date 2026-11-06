@@ -1,20 +1,19 @@
-#
+
 # Python script to snapshot a PG and optionally re-sync to a target PG
 #
-# Graham Thornton - May 2026
+# Graham Thornton - May 2026, Oct 2026
 # gthornton@everpuredata.com
 #
 # requires py_pure_client
 # requires python -m pip install 'setuptools<72.0.0'
 #
 # usage:
-# python fa_pg_snap.py -s gct-oradb-vvol-ac::pgroup-auto -t gct-oradb-vvol-pg-swingtarget -n gct1 -f config.json -x
+# python fa_pg_snap.py -s gct-oradb-vvol-ac::pgroup-auto -t gct-oradb-vvol-pg-swingtarget -n gct1 -j config.json -x
 #
 
 import sys
 import time
 import os
-import re
 import datetime
 import json
 import argparse
@@ -33,7 +32,7 @@ HALT=1
 NOHALT=0
 I_BYTES_PER_GB = 1024**3
 
-version = "1.2.0"
+version = "1.3.0"
 not_defined = "Not Defined"
 
 # main dictionary for script variables
@@ -86,6 +85,8 @@ def fNotNone( foo, bar ):
     if foo is None: return bar
     return foo
 
+def fBool( foo ):
+    return str( foo ).strip().lower() == "true"
 
 
 ##############################################
@@ -310,7 +311,6 @@ def fQueryVolsinPG( my_array, my_protection_group, my_array_name ):
 
 def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, lst_my_vols, lst_excluded_vols ):
 
-    nVols=0
     print( '============' )
     print( f'listing the volumes for snapshot:{my_snapshot_name}' )
 
@@ -336,12 +336,11 @@ def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, ls
                 print( f'  name:{myoutput.name}\n' )
 
             else:
-                nVols+=1
                 dictSourceVols[ myoutput.source.id ] = VolEntry( '0', myoutput.name, myoutput.space.total_provisioned )
                 print( f'name:{myoutput.name} sz:{myoutput.space.total_provisioned/I_BYTES_PER_GB} GB' )
 
 
-    return nVols
+    return len( dictSourceVols )
 
 #
 # query the target volumes specified in the given list
@@ -350,7 +349,7 @@ def fQueryVolumesinSnapshot( my_array, my_protection_group, my_snapshot_name, ls
 # updates are written to dictTargetVols 
 #
 
-def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols ):
+def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols, lst_excluded_vols ):
 
     print( '============' )
     print( 'querying target volume details' )
@@ -363,6 +362,12 @@ def mQueryTargetVolumeDetails( my_array, ignore_match, lst_my_vols ):
     )
 
     for myoutput in response.items:
+
+        # skip target volumes the user has excluded
+        if myoutput.id in lst_excluded_vols:
+            print( f'id:{myoutput.id} is excluded from mapping' )
+            print( f'  name:{myoutput.name}\n' )
+            continue
 
         print( f'nm:{myoutput.name}\n  id:{myoutput.id}' )
 
@@ -469,27 +474,6 @@ def fCreateVolumeMap( ):
                     break
 
 
-
-        # if this src vol is not matched, is there an unmatched target of larger size?
-        if( src_tmap=='0' ):
-
-            print( '  checking for unmatched volume of larger size' )
-
-            # is there a matching target for this volume?
-            for tgt_key, tgt_val in dictTargetVols.items():
-                tgt_smap = tgt_val.caMap
-                tgt_name = tgt_val.caName
-                tgt_size = tgt_val.iSize
-
-#                print( '    tgt key:'+tgt_key+' smap:'+tgt_smap+' nm:'+tgt_name+' sz:'+tgt_size )
-
-                if( tgt_smap=='0' and tgt_size>=src_size ):
-#                   print( 'volume '+src_name+' will be synced to '+tgt_name )
-                    dictSourceVols[ src_key ] = VolEntry( tgt_key, src_name, src_size )
-                    dictTargetVols[ tgt_key ] = VolEntry( src_key, tgt_name, tgt_size )
-                    src_tmap=tgt_key
-                    break
-
         # catch a no-match
         if( src_tmap=='0' ):
 
@@ -519,8 +503,10 @@ def fQuerySnapshotReplication( my_array, my_array_name, my_protection_group, my_
         try:
             data = list(response.items)
             return data[0].progress
-        except ( IndexError, TypeError ):
+        except:
             return None
+
+
 
     if( my_safe_mode ): return True
 
@@ -743,14 +729,14 @@ def doMain( ):
 
     # parse the command line args
     parser = argparse.ArgumentParser(
-                    prog='fa_pg_snap ', usage='%(prog)s [-s -t -n -f -i -r -o -x -h]',
+                    prog='fa_pg_snap ', usage='%(prog)s [ options ]',
                     description='snapshot a protection group on an Everpure Flash Array',
                     epilog='coded by Graham Thornton - gthornton@everpuredata.com')
 
-    parser.add_argument('-s','--caSourceProtectionGroup', help='source pg', required=False)
-    parser.add_argument('-t','--caTargetProtectionGroup', help='target pg', required=False)
+    parser.add_argument('-s','--source_protection_group', help='source pg', required=False)
+    parser.add_argument('-t','--target_protection_group', help='target pg', required=False)
     parser.add_argument('-n','--snapshot_name', help='name of the snapshot', required=True)
-    parser.add_argument('-f','--config_file', help='json document of config options', required=False)
+    parser.add_argument('-j','--config_file', help='json document of config options', required=False)
     parser.add_argument('-i','--ignore_match', action='store_true', help='ignore tag-matching')
     parser.add_argument('-r','--replicate', action='store_true', help='replicate the snapshot')
     parser.add_argument('-o','--output_file', help='output file with names of volumes in the snapshot', required=False)
@@ -769,11 +755,12 @@ def doMain( ):
     #
     # read the config file
     #
+    global dictArgs
     if( args.config_file != None ): dictArgs = fReadConnectionJSON( args.config_file )
 
     # fa variables for source array
-    src_flash_array = dictArgs.get( "src_flash_array_host", dictArgs.get( "flash_array_host", os.environ.get('FA_HOST')))
-    src_flash_array_api_token = dictArgs.get( "src_flash_array_api_token", dictArgs.get( "flash_array_api_token", os.environ.get('API_TOKEN')))
+    src_flash_array = dictArgs.get( "src_flash_array_host", dictArgs.get( "flash_array_host", os.environ.get('PUREFA_URL')))
+    src_flash_array_api_token = dictArgs.get( "src_flash_array_api_token", dictArgs.get( "flash_array_api_token", os.environ.get('PUREFA_API')))
     flash_array_api_version = dictArgs.get( "flash_array_api_version" )
 
     if( src_flash_array==None or src_flash_array_api_token==None ):
@@ -789,14 +776,14 @@ def doMain( ):
     #
     # get the source and optional target protection groups
     #
-    caSourceProtectionGroup=fNotNone( args.caSourceProtectionGroup, dictArgs.get( "caSourceProtectionGroup", dictArgs.get( "src_protection_group", not_defined )))
-    caTargetProtectionGroup=fNotNone( args.caTargetProtectionGroup, dictArgs.get( "caTargetProtectionGroup", dictArgs.get( "tgt_protection_group", not_defined )))
+    caSourceProtectionGroup=fNotNone( args.source_protection_group, dictArgs.get( "source_protection_group", dictArgs.get( "src_protection_group", not_defined )))
+    caTargetProtectionGroup=fNotNone( args.target_protection_group, dictArgs.get( "target_protection_group", dictArgs.get( "tgt_protection_group", not_defined )))
     if( caSourceProtectionGroup==not_defined ): mQuit( 'source protection group is not defined' )
 
     #
     # check if we want the snapshot to replicate
     #
-    bReplicate = ( args.replicate or dictArgs.get( "replicate" )=="True" )
+    bReplicate = ( args.replicate or fBool( dictArgs.get( "replicate" )))
 
     #
     # do we want to replicate this snapshot?
@@ -806,8 +793,8 @@ def doMain( ):
         if( caSourceProtectionGroup==not_defined ): mQuit( 'replicate specified but source protection group is not defined' )
 
         # fa variables for target array
-        tgt_flash_array = dictArgs.get( "tgt_flash_array_host", os.environ.get('FA_HOST_TGT') )
-        tgt_flash_array_api_token = dictArgs.get( "tgt_flash_array_api_token", os.environ.get('API_TOKEN_TGT') )
+        tgt_flash_array = dictArgs.get( "tgt_flash_array_host", os.environ.get('PUREFA_TARGET_URL') )
+        tgt_flash_array_api_token = dictArgs.get( "tgt_flash_array_api_token", os.environ.get('PUREFA_TARGET_API') )
 
         if( tgt_flash_array==None or tgt_flash_array_api_token==None ):
             mQuit( 'tgt_flash_array_host and tgt_flash_array_api_token need to be defined in the config file or environment variables' )
@@ -917,7 +904,6 @@ def doMain( ):
     #
     if( args.output_file != None ):
         print( '============' )
-        lst_excluded_vols = dictArgs.get( "excluded_volumes", [] )
         mWriteVolumesinSnapshot( args.output_file, lst_excluded_vols )
 
 
@@ -939,7 +925,7 @@ def doMain( ):
     # for each target volume get the capacity and the source volume id
     # this call populates dictTargetVols id:source_map|vol_name|size
     #
-    mQueryTargetVolumeDetails( myArrayTgt, args.ignore_match, lst_target_vols )
+    mQueryTargetVolumeDetails( myArrayTgt, args.ignore_match, lst_target_vols, lst_excluded_vols )
 
 
     #
@@ -974,6 +960,3 @@ def doMain( ):
 
 
 if __name__ == "__main__": doMain()
-
-
-
