@@ -32,7 +32,7 @@ HALT=1
 NOHALT=0
 I_BYTES_PER_GB = 1024**3
 
-version = "1.3.0"
+version = "2.0.0"
 not_defined = "Not Defined"
 
 # main dictionary for script variables

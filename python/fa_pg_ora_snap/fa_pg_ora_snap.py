@@ -27,7 +27,7 @@ import fa_pg_snap
 
 # global variables
 from fa_pg_snap import not_defined, HALT, NOHALT
-version = "1.9.0"
+version = "2.0.0"
 
 lst_db_parameters = ['control_files','db_recovery_file_dest','db_recovery_file_dest_size','enable_pluggable_database']
 
