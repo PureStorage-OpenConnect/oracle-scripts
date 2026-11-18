@@ -1,0 +1,14 @@
+{
+   "flash_array_host": "myflasharray.mydomain.com",
+   "flash_array_api_token": "thesecretapikey",
+   "rules": [
+      {
+         "access": "no-root-squash",
+         "client": "abc",
+         "permission": "rw",
+         "nfs_version": "NFSv3,NFSv4"
+      }
+   ]
+}
+
+
