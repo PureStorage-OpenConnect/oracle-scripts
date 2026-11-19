@@ -27,7 +27,7 @@ urllib3.disable_warnings()
 # global variables
 HALT=1
 NOHALT=0
-version = "1.2.0"
+version = "1.3.0"
 not_defined = "Not Defined"
 
 # main dictionary for script variables
@@ -338,6 +338,45 @@ def mClonePod( my_array, my_source_pod, my_target_pod ):
     if response is None: mQuit( f'pod {my_target_pod} was not created - cannot continue' )
 
 
+#
+# replace the original export rules with the ones specified in the JSON file
+# if it was given
+#
+
+def mChangeExportRules( my_array, safe_mode, my_rules, my_lst_target_policies ):
+
+    # see if new export rules were specified
+    export_rules = dictMain.get( "rules", None )
+
+    if( export_rules is None ):
+        print( f'no export rules were defined, rules were copied from the source policy' )
+        return
+
+    #print( f'{export_rules}' )
+
+
+    for policy in my_lst_target_policies:
+
+        if( safe_mode ):
+            print( f'NOTE: would replace client rules on {policy} with {len(export_rules)} rule(s)' )
+            continue
+
+        response = fAPICall( my_array.get_policies_nfs_client_rules, 'call to get_policies_nfs_client_rules failed', policy_names=[policy] )
+        if response is None: mQuit( f'could not read rules for {policy} - cannot continue' )
+
+        for rule in response.items:
+            print( f'deleting rule {rule.name}' )
+            r = fAPICall( my_array.delete_policies_nfs_client_rules,
+                    'call to delete_policies_nfs_client_rules failed',
+                    policy_names=[policy], names=[rule.name] )
+            if r is None: mQuit( f'could not delete rule {rule.name} - cannot continue' )
+
+        r = fAPICall( my_array.post_policies_nfs_client_rules,
+                'call to post_policies_nfs_client_rules failed',
+                policy_names=[policy], rules={'rules': export_rules} )
+        if r is None: mQuit( f'could not add rules to {policy} - cannot continue' )
+
+        print( f'replaced client rules on {policy}' )
 
 #
 # apply directory exports to the cloned pod
@@ -534,7 +573,9 @@ def doMain( ):
         policy+=1
 
 
+    print( '============' )
 
+    mChangeExportRules( myArray, args.execute_lock, args.config_file, lst_target_policies )
 
     #
     # apply directory exports to the cloned pod
